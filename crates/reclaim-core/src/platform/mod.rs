@@ -39,4 +39,3 @@ pub fn is_reparse_point(file_type: &FileType) -> bool {
         false
     }
 }
-

@@ -58,4 +58,3 @@ pub struct SkippedEntry {
     /// Why the entry was skipped.
     pub reason: SkipReason,
 }
-

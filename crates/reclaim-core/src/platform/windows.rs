@@ -15,4 +15,3 @@ pub fn classify_special_file_type(ft: &FileType) -> Option<SkipReason> {
         None
     }
 }
-
