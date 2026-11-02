@@ -1,0 +1,10 @@
+[package]
+name = "reclaim-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Reclaim Contributors"]
+description = "Core library for Reclaim filesystem scanner and cleanup engine"
+license = "MIT"
+
+[dependencies]
+

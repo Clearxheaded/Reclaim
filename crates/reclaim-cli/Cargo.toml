@@ -1,0 +1,11 @@
+[package]
+name = "reclaim"
+version = "0.1.0"
+edition = "2021"
+authors = ["Reclaim Contributors"]
+description = "CLI tool for Reclaim filesystem scanner"
+license = "MIT"
+
+[dependencies]
+reclaim-core = { path = "../reclaim-core" }
+

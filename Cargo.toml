@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "crates/reclaim-core",
+    "crates/reclaim-cli",
+]
+resolver = "2"
+
