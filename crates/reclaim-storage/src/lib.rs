@@ -11,6 +11,7 @@
 
 pub mod datetime;
 pub mod error;
+pub mod executor;
 pub mod journal;
 pub mod recovery;
 pub mod schema;
@@ -18,6 +19,10 @@ pub mod types;
 
 // Re-export primary types for ergonomic usage
 pub use error::StorageError;
+pub use executor::{
+    ActionExecutionStatus, ActionResult, ExecutionOptions, ExecutionProgressEvent, ExecutionReport,
+    SafeExecutor,
+};
 pub use journal::ActionJournal;
 pub use recovery::{inspect_startup_state, reconcile_interrupted_sessions, StartupRecoveryReport};
 pub use schema::CURRENT_SCHEMA_VERSION;

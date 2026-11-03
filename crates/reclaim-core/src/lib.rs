@@ -15,6 +15,7 @@ pub mod duplicates;
 pub mod entry;
 pub mod error;
 pub mod file_id;
+pub mod mutation;
 pub mod planner;
 pub mod platform;
 pub mod scanner;
@@ -28,6 +29,10 @@ pub use duplicates::{
 pub use entry::{FileEntry, SkipReason, SkippedEntry};
 pub use error::{RootScanError, ScanError, ScanErrorKind};
 pub use file_id::FileId;
+pub use mutation::{
+    atomic_move_no_replace, compute_file_blake3_hash, validate_action_preconditions,
+    verify_same_filesystem, MutationError, PreconditionError,
+};
 pub use planner::{
     generate_plan, ActionPreconditions, CleanupPlan, KeeperPolicy, PlanError, PlanOptions,
     PlanSummary, ProtectedKeeper, QuarantineAction,

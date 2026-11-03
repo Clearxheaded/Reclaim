@@ -3,7 +3,11 @@ use reclaim_core::{
     DuplicateSummary, KeeperPolicy, PlanOptions, PlanSummary, RootScanError, ScanOptions,
     ScanSummary,
 };
+use reclaim_storage::{
+    ActionJournal, ExecutionOptions, ExecutionProgressEvent, ExecutionReport, SafeExecutor,
+};
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -82,6 +86,7 @@ fn main() -> ExitCode {
             }
         }
         "plan" => parse_and_run_plan(&args[2..]),
+        "execute" => parse_and_run_execute(&args[2..]),
         unknown => {
             eprintln!("Error: unrecognized command '{}'", unknown);
             print_usage();
@@ -105,8 +110,15 @@ fn print_usage() {
     );
     println!("    duplicates <directory> [OPTIONS]  Identify exact duplicate files using BLAKE3");
     println!("    plan <directory> [OPTIONS]        Generate an immutable cleanup plan preview");
+    println!("    execute <plan.json|dir> [OPTIONS] Execute safe quarantine moves with atomic non-replace");
     println!("    help                              Print this help information");
     println!("    version                           Print version");
+    println!();
+    println!("EXECUTE OPTIONS:");
+    println!("    --dry-run                         Simulate execution without modifying files");
+    println!("    --journal <path>                  SQLite action journal database path");
+    println!("    --json                            Output execution report as structured JSON");
+    println!("    --halt-on-error                   Halt immediately on first action failure");
     println!();
     println!("PLAN OPTIONS:");
     println!(
@@ -141,6 +153,24 @@ fn print_plan_help() {
     );
     println!("    --json                  Emit plan preview as formatted JSON");
     println!("    --include-empty         Include 0-byte files in duplicate detection");
+    println!("    -h, --help              Print this help information");
+}
+
+fn print_execute_help() {
+    println!("Usage: reclaim execute <plan.json | directory> [OPTIONS]");
+    println!();
+    println!("Executes safe, reviewable quarantine moves with atomic no-replace guarantees");
+    println!("and durable SQLite state machine journaling.");
+    println!();
+    println!("Options:");
+    println!("    --dry-run               Simulate pre-validation and journal logging without moving files");
+    println!("    --journal <path>        Custom SQLite journal database path [default: <root>/.reclaim/journal.db]");
+    println!("    --json                  Emit machine-readable execution report as JSON");
+    println!("    --halt-on-error         Halt execution on first action failure");
+    println!("    --policy <policy>       Keeper selection policy if targeting a directory [default: shortest-path]");
+    println!("    --prefer-dir <dir>      Preferred keeper directory if targeting a directory");
+    println!("    --quarantine-dir <dir>  Target quarantine staging directory");
+    println!("    --include-empty         Include 0-byte files if generating plan on the fly");
     println!("    -h, --help              Print this help information");
 }
 
@@ -480,6 +510,455 @@ fn run_plan(
     } else {
         print_plan_human(&plan);
         ExitCode::SUCCESS
+    }
+}
+
+fn parse_and_run_execute(raw_args: &[String]) -> ExitCode {
+    if raw_args.is_empty() {
+        eprintln!("Error: 'execute' requires a plan JSON file or target directory path.");
+        eprintln!("Usage: reclaim execute <plan.json | directory> [OPTIONS]");
+        return ExitCode::FAILURE;
+    }
+
+    let mut target_str = None;
+    let mut dry_run = false;
+    let mut journal_str = None;
+    let mut json_output = false;
+    let mut halt_on_error = false;
+    let mut policy_str = "shortest-path".to_string();
+    let mut prefer_dir_str = None;
+    let mut quarantine_dir_str = None;
+    let mut include_empty = false;
+
+    let mut i = 0;
+    while i < raw_args.len() {
+        let arg = &raw_args[i];
+        match arg.as_str() {
+            "-h" | "--help" => {
+                print_execute_help();
+                return ExitCode::SUCCESS;
+            }
+            "--dry-run" => {
+                dry_run = true;
+                i += 1;
+            }
+            "--json" => {
+                json_output = true;
+                i += 1;
+            }
+            "--halt-on-error" => {
+                halt_on_error = true;
+                i += 1;
+            }
+            "--include-empty" => {
+                include_empty = true;
+                i += 1;
+            }
+            "--journal" => {
+                i += 1;
+                if i >= raw_args.len() {
+                    eprintln!("Error: --journal requires a path");
+                    return ExitCode::FAILURE;
+                }
+                journal_str = Some(raw_args[i].clone());
+                i += 1;
+            }
+            val if val.starts_with("--journal=") => {
+                journal_str = Some(val.trim_start_matches("--journal=").to_string());
+                i += 1;
+            }
+            "--policy" => {
+                i += 1;
+                if i >= raw_args.len() {
+                    eprintln!("Error: --policy requires a value (shortest-path, oldest, newest)");
+                    return ExitCode::FAILURE;
+                }
+                policy_str = raw_args[i].clone();
+                i += 1;
+            }
+            val if val.starts_with("--policy=") => {
+                policy_str = val.trim_start_matches("--policy=").to_string();
+                i += 1;
+            }
+            "--prefer-dir" => {
+                i += 1;
+                if i >= raw_args.len() {
+                    eprintln!("Error: --prefer-dir requires a directory path");
+                    return ExitCode::FAILURE;
+                }
+                prefer_dir_str = Some(raw_args[i].clone());
+                i += 1;
+            }
+            val if val.starts_with("--prefer-dir=") => {
+                prefer_dir_str = Some(val.trim_start_matches("--prefer-dir=").to_string());
+                i += 1;
+            }
+            "--quarantine-dir" => {
+                i += 1;
+                if i >= raw_args.len() {
+                    eprintln!("Error: --quarantine-dir requires a directory path");
+                    return ExitCode::FAILURE;
+                }
+                quarantine_dir_str = Some(raw_args[i].clone());
+                i += 1;
+            }
+            val if val.starts_with("--quarantine-dir=") => {
+                quarantine_dir_str = Some(val.trim_start_matches("--quarantine-dir=").to_string());
+                i += 1;
+            }
+            other if other.starts_with('-') => {
+                eprintln!("Error: unrecognized option '{}'", other);
+                return ExitCode::FAILURE;
+            }
+            path if target_str.is_none() => {
+                target_str = Some(path.to_string());
+                i += 1;
+            }
+            other => {
+                eprintln!("Error: unexpected argument '{}'", other);
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
+    let target = match target_str {
+        Some(t) => PathBuf::from(t),
+        None => {
+            eprintln!("Error: 'execute' requires a plan JSON file or target directory path.");
+            eprintln!("Usage: reclaim execute <plan.json | directory> [OPTIONS]");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let base_policy = match policy_str.to_lowercase().as_str() {
+        "shortest-path" | "shortest" | "shortestpath" => KeeperPolicy::ShortestPath,
+        "oldest" | "oldest-modified" | "oldestmodified" => KeeperPolicy::OldestModified,
+        "newest" | "newest-modified" | "newestmodified" => KeeperPolicy::NewestModified,
+        other => {
+            eprintln!(
+                "Error: unrecognized keeper policy '{}'. Allowed values: shortest-path, oldest, newest",
+                other
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let policy = match prefer_dir_str {
+        Some(preferred_path) => {
+            let pref_dir = PathBuf::from(preferred_path);
+            if base_policy == KeeperPolicy::ShortestPath {
+                KeeperPolicy::PreferredDirectory(pref_dir)
+            } else {
+                KeeperPolicy::PreferredDirectoryWithStrategy {
+                    preferred_dir: pref_dir,
+                    strategy: Box::new(base_policy),
+                }
+            }
+        }
+        None => base_policy,
+    };
+
+    let quarantine_dir = quarantine_dir_str.map(PathBuf::from);
+    let custom_journal = journal_str.map(PathBuf::from);
+
+    let cli_args = ExecuteCliArgs {
+        target_path: target,
+        policy,
+        quarantine_dir,
+        custom_journal,
+        dry_run,
+        halt_on_error,
+        include_empty,
+        json_output,
+    };
+
+    run_execute(cli_args)
+}
+
+struct ExecuteCliArgs {
+    target_path: PathBuf,
+    policy: KeeperPolicy,
+    quarantine_dir: Option<PathBuf>,
+    custom_journal: Option<PathBuf>,
+    dry_run: bool,
+    halt_on_error: bool,
+    include_empty: bool,
+    json_output: bool,
+}
+
+fn run_execute(args: ExecuteCliArgs) -> ExitCode {
+    if !args.target_path.exists() {
+        eprintln!(
+            "Error: target path '{}' does not exist.",
+            args.target_path.display()
+        );
+        return ExitCode::FAILURE;
+    }
+
+    let plan = if args.target_path.is_file() {
+        if !args.json_output {
+            println!(
+                "Reading cleanup plan from '{}'...",
+                args.target_path.display()
+            );
+        }
+        let json_data = match fs::read_to_string(&args.target_path) {
+            Ok(data) => data,
+            Err(e) => {
+                eprintln!(
+                    "Error reading plan file '{}': {}",
+                    args.target_path.display(),
+                    e
+                );
+                return ExitCode::FAILURE;
+            }
+        };
+        let mut loaded_plan: CleanupPlan = match serde_json::from_str(&json_data) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Error parsing JSON cleanup plan: {}", e);
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Some(override_quarantine) = args.quarantine_dir {
+            loaded_plan.quarantine_dir = override_quarantine;
+        }
+        loaded_plan
+    } else if args.target_path.is_dir() {
+        if !args.json_output {
+            println!(
+                "Scanning directory and generating plan for '{}'...",
+                args.target_path.display()
+            );
+        }
+        let scan_opts = ScanOptions::default();
+        let scan_output = match scan_directory(&args.target_path, scan_opts) {
+            Ok(output) => output,
+            Err(err) => {
+                eprintln!("Error scanning directory: {}", err);
+                print_root_error_notes(&err);
+                return ExitCode::FAILURE;
+            }
+        };
+        let dup_opts = DuplicateOptions {
+            include_empty: args.include_empty,
+            ..Default::default()
+        };
+        let dup_output = find_duplicates(&scan_output.entries, &dup_opts);
+        let plan_opts = PlanOptions {
+            root_dir: args.target_path.clone(),
+            policy: args.policy,
+            quarantine_dir: args.quarantine_dir,
+        };
+        match generate_plan(&dup_output.groups, &plan_opts) {
+            Ok(plan) => plan,
+            Err(err) => {
+                eprintln!("Error generating cleanup plan: {}", err);
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        eprintln!(
+            "Error: target '{}' is neither a regular file nor a directory.",
+            args.target_path.display()
+        );
+        return ExitCode::FAILURE;
+    };
+
+    let journal_path = match args.custom_journal {
+        Some(path) => path,
+        None => {
+            let default_dir = plan.root_dir.join(".reclaim");
+            let _ = fs::create_dir_all(&default_dir);
+            default_dir.join("journal.db")
+        }
+    };
+
+    if let Some(parent) = journal_path.parent() {
+        if !parent.exists() {
+            let _ = fs::create_dir_all(parent);
+        }
+    }
+
+    let mut journal = match ActionJournal::open(&journal_path) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!(
+                "Error opening SQLite action journal at '{}': {}",
+                journal_path.display(),
+                e
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let exec_options = ExecutionOptions {
+        dry_run: args.dry_run,
+        halt_on_error: args.halt_on_error,
+    };
+    let mut executor = SafeExecutor::new(exec_options);
+
+    if args.json_output {
+        match executor.execute_plan(&mut journal, &plan) {
+            Ok(report) => match serde_json::to_string_pretty(&report) {
+                Ok(json_str) => {
+                    println!("{}", json_str);
+                    if report.failed_actions > 0 {
+                        ExitCode::FAILURE
+                    } else {
+                        ExitCode::SUCCESS
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error serializing execution report to JSON: {}", e);
+                    ExitCode::FAILURE
+                }
+            },
+            Err(e) => {
+                eprintln!("Execution failed with storage error: {}", e);
+                ExitCode::FAILURE
+            }
+        }
+    } else {
+        println!("Reclaim Safe Quarantine Executor v{}", VERSION);
+        println!("Target root:        {}", plan.root_dir.display());
+        println!("Quarantine folder:  {}", plan.quarantine_dir.display());
+        println!("Journal database:   {}", journal_path.display());
+        println!(
+            "Execution mode:     {}",
+            if args.dry_run {
+                "DRY-RUN (Pre-validation & simulation; NO files will be moved)"
+            } else {
+                "LIVE MUTATION (Atomic non-replacing move to quarantine)"
+            }
+        );
+        println!("Actions planned:    {}", plan.actions.len());
+        println!(
+            "Reclaimable bytes:  {} ({} bytes)",
+            format_bytes(plan.summary.total_reclaimable_bytes),
+            plan.summary.total_reclaimable_bytes
+        );
+        println!("==================================================");
+        println!();
+
+        if plan.actions.is_empty() {
+            println!("No actions to execute. Directory is clean.");
+            return ExitCode::SUCCESS;
+        }
+
+        println!("Starting execution with real-time TOCTOU precondition validation...");
+        println!();
+
+        let report_res =
+            executor.execute_plan_with_callback(&mut journal, &plan, |event| match event {
+                ExecutionProgressEvent::Validating {
+                    source,
+                    destination,
+                    index,
+                    total,
+                    ..
+                } => {
+                    println!(
+                        "[{}/{}] Validating preconditions: '{}' -> '{}'",
+                        index,
+                        total,
+                        source.display(),
+                        destination.display()
+                    );
+                }
+                ExecutionProgressEvent::Executing {
+                    source, dry_run, ..
+                } => {
+                    if dry_run {
+                        println!("  [SIMULATING MOVE] '{}'", source.display());
+                    } else {
+                        println!("  [MOVING ATOMICALLY] '{}'", source.display());
+                    }
+                }
+                ExecutionProgressEvent::Completed {
+                    source,
+                    bytes_freed,
+                    dry_run,
+                    ..
+                } => {
+                    if dry_run {
+                        println!(
+                            "  ✔ [DRY RUN VALIDATED] '{}' (would reclaim {})",
+                            source.display(),
+                            format_bytes(bytes_freed)
+                        );
+                    } else {
+                        println!(
+                            "  ✔ [QUARANTINED] '{}' (freed {})",
+                            source.display(),
+                            format_bytes(bytes_freed)
+                        );
+                    }
+                }
+                ExecutionProgressEvent::Failed { source, reason, .. } => {
+                    eprintln!("  ✖ [FAILED] '{}': {}", source.display(), reason);
+                }
+                ExecutionProgressEvent::Skipped { source, reason, .. } => {
+                    println!("  - [SKIPPED] '{}': {}", source.display(), reason);
+                }
+            });
+
+        let report = match report_res {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!();
+                eprintln!("Execution aborted with storage error: {}", e);
+                return ExitCode::FAILURE;
+            }
+        };
+
+        println!();
+        print_execution_summary(&report, &journal_path);
+
+        if report.failed_actions > 0 {
+            ExitCode::FAILURE
+        } else {
+            ExitCode::SUCCESS
+        }
+    }
+}
+
+fn print_execution_summary(report: &ExecutionReport, journal_path: &Path) {
+    println!("--------------------------------------------------");
+    println!("Execution Summary");
+    println!("--------------------------------------------------");
+    println!(
+        "Status:                {}",
+        if report.failed_actions == 0 {
+            if report.dry_run {
+                "Dry Run Completed (Simulation Successful)"
+            } else {
+                "Completed Successfully"
+            }
+        } else {
+            "Completed with Failures"
+        }
+    );
+    println!("Duration:              {:.2?}", report.elapsed);
+    println!("Session ID:            {}", report.session_id);
+    println!("Plan ID:               {}", report.plan_id);
+    println!("Total actions:         {}", report.total_actions);
+    println!("Actions completed:     {}", report.completed_actions);
+    println!("Actions failed:        {}", report.failed_actions);
+    println!("Actions skipped:       {}", report.skipped_actions);
+    println!(
+        "Storage reclaimed:     {} ({} bytes)",
+        format_bytes(report.bytes_reclaimed),
+        report.bytes_reclaimed
+    );
+    println!("Journal path:          {}", journal_path.display());
+    println!("--------------------------------------------------");
+    if report.dry_run {
+        println!("Dry run mode active: Zero filesystem changes were committed.");
+    } else if report.failed_actions == 0 {
+        println!("All duplicate files were safely moved to quarantine.");
+    } else {
+        println!("Warning: Some actions failed. Inspect the journal audit trail for diagnostics.");
     }
 }
 

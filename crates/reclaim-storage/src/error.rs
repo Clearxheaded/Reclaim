@@ -55,4 +55,3 @@ pub enum StorageError {
     #[error("Filesystem IO error: {0}")]
     Io(#[from] std::io::Error),
 }
-
