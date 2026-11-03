@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs::Metadata;
 
@@ -8,7 +9,7 @@ use std::fs::Metadata;
 ///
 /// This identity allows distinguishing distinct physical files from hard links pointing to
 /// the same underlying storage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum FileId {
     /// Unix device ID and inode number.
     Unix { dev: u64, ino: u64 },
