@@ -298,3 +298,32 @@ pub struct PlanDetails {
     /// All protected keepers preserved in this plan.
     pub keepers: Vec<ProtectedKeeper>,
 }
+
+/// Aggregated historical summary of an execution session for audit and CLI reporting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionHistorySummary {
+    /// Session identifier.
+    pub session_id: SessionId,
+    /// Root directory targeted by this session.
+    pub target_root: PathBuf,
+    /// Current session status.
+    pub status: SessionStatus,
+    /// Start timestamp.
+    pub started_at: SystemTime,
+    /// Completion or interruption timestamp.
+    pub ended_at: Option<SystemTime>,
+    /// Total plans generated under this session.
+    pub total_plans: usize,
+    /// Total actions recorded across all plans in this session.
+    pub total_actions: usize,
+    /// Total actions completed (currently staged in quarantine).
+    pub completed_actions: usize,
+    /// Total actions reverted (safely restored from quarantine).
+    pub reverted_actions: usize,
+    /// Total actions that failed during validation or mutation.
+    pub failed_actions: usize,
+    /// Active bytes currently held in quarantine for this session.
+    pub active_quarantined_bytes: u64,
+    /// Total bytes restored from quarantine back to original locations.
+    pub restored_bytes: u64,
+}

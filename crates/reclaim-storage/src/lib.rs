@@ -16,6 +16,7 @@ pub mod journal;
 pub mod recovery;
 pub mod schema;
 pub mod types;
+pub mod undo;
 
 // Re-export primary types for ergonomic usage
 pub use error::StorageError;
@@ -24,9 +25,17 @@ pub use executor::{
     SafeExecutor,
 };
 pub use journal::ActionJournal;
-pub use recovery::{inspect_startup_state, reconcile_interrupted_sessions, StartupRecoveryReport};
+pub use recovery::{
+    count_dangling_sessions, inspect_startup_state, reconcile_interrupted_sessions,
+    reconcile_startup_state, ActionRecoveryDetail, ActionRecoveryResolution, RecoveryReport,
+    StartupRecoveryReport,
+};
 pub use schema::CURRENT_SCHEMA_VERSION;
 pub use types::{
     ActionId, ActionState, JournalEvent, JournaledAction, PlanDetails, PlanId, SessionDetails,
-    SessionId, SessionStatus,
+    SessionHistorySummary, SessionId, SessionStatus,
+};
+pub use undo::{
+    SafeReverter, UndoActionResult, UndoConflictDetail, UndoConflictReason, UndoOptions,
+    UndoProgressEvent, UndoReport, UndoStatus,
 };

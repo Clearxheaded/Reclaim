@@ -5,6 +5,7 @@ use reclaim_core::{
 };
 use reclaim_storage::{
     ActionJournal, ExecutionOptions, ExecutionProgressEvent, ExecutionReport, SafeExecutor,
+    SafeReverter, SessionId, UndoOptions, UndoProgressEvent, UndoReport,
 };
 use std::env;
 use std::fs;
@@ -87,6 +88,9 @@ fn main() -> ExitCode {
         }
         "plan" => parse_and_run_plan(&args[2..]),
         "execute" => parse_and_run_execute(&args[2..]),
+        "undo" => parse_and_run_undo(&args[2..]),
+        "recover" => parse_and_run_recover(&args[2..]),
+        "history" => parse_and_run_history(&args[2..]),
         unknown => {
             eprintln!("Error: unrecognized command '{}'", unknown);
             print_usage();
@@ -111,6 +115,11 @@ fn print_usage() {
     println!("    duplicates <directory> [OPTIONS]  Identify exact duplicate files using BLAKE3");
     println!("    plan <directory> [OPTIONS]        Generate an immutable cleanup plan preview");
     println!("    execute <plan.json|dir> [OPTIONS] Execute safe quarantine moves with atomic non-replace");
+    println!(
+        "    undo [directory] [OPTIONS]        Safely restore quarantined files with TOCTOU checks"
+    );
+    println!("    recover [directory] [OPTIONS]     Reconcile interrupted actions against physical disk state");
+    println!("    history [directory] [OPTIONS]     Inspect previous cleanup sessions and journal audit trails");
     println!("    help                              Print this help information");
     println!("    version                           Print version");
     println!();
@@ -119,6 +128,14 @@ fn print_usage() {
     println!("    --journal <path>                  SQLite action journal database path");
     println!("    --json                            Output execution report as structured JSON");
     println!("    --halt-on-error                   Halt immediately on first action failure");
+    println!();
+    println!("UNDO OPTIONS:");
+    println!("    --session <uuid>                  Undo a specific session by UUID");
+    println!("    --last                            Undo the most recent completed execution session [default]");
+    println!("    --dry-run                         Simulate restoration and check conflicts without moving files");
+    println!("    --journal <path>                  SQLite action journal database path");
+    println!("    --json                            Output undo report as structured JSON");
+    println!("    --halt-on-error                   Halt immediately on first conflict or error");
     println!();
     println!("PLAN OPTIONS:");
     println!(
@@ -172,6 +189,52 @@ fn print_execute_help() {
     println!("    --quarantine-dir <dir>  Target quarantine staging directory");
     println!("    --include-empty         Include 0-byte files if generating plan on the fly");
     println!("    -h, --help              Print this help information");
+}
+
+fn print_undo_help() {
+    println!("Usage: reclaim undo [directory] [OPTIONS]");
+    println!();
+    println!("Safely restores quarantined duplicate files back to their original locations.");
+    println!(
+        "Enforces strict TOCTOU vacancy checks, keeper verification, and content hash validation."
+    );
+    println!();
+    println!("Options:");
+    println!("    --session <uuid>    Undo a specific session by its UUID");
+    println!("    --last              Undo the most recent completed execution session [default]");
+    println!(
+        "    --dry-run           Simulate restoration and check conflicts without moving files"
+    );
+    println!("    --journal <path>    Custom SQLite journal database path [default: <root>/.reclaim/journal.db]");
+    println!("    --json              Emit machine-readable undo report as formatted JSON");
+    println!("    --halt-on-error     Halt execution on the first conflict or error");
+    println!("    -h, --help          Print this help information");
+}
+
+fn print_recover_help() {
+    println!("Usage: reclaim recover [directory] [OPTIONS]");
+    println!();
+    println!("Performs active dual journal-filesystem reconciliation after an unclean shutdown or crash.");
+    println!("Inspects physical disk state at both source and quarantine paths to reconcile in-flight actions.");
+    println!();
+    println!("Options:");
+    println!("    --journal <path>    Custom SQLite journal database path [default: <root>/.reclaim/journal.db]");
+    println!("    --json              Emit machine-readable recovery report as formatted JSON");
+    println!("    -h, --help          Print this help information");
+}
+
+fn print_history_help() {
+    println!("Usage: reclaim history [directory] [OPTIONS]");
+    println!();
+    println!(
+        "Displays past execution sessions, plans, action states, and reclaimed storage metrics."
+    );
+    println!();
+    println!("Options:");
+    println!("    --session <uuid>    Inspect detailed plans and actions for a specific session");
+    println!("    --journal <path>    Custom SQLite journal database path [default: <root>/.reclaim/journal.db]");
+    println!("    --json              Emit machine-readable session history as formatted JSON");
+    println!("    -h, --help          Print this help information");
 }
 
 fn print_root_error_notes(err: &RootScanError) {
@@ -959,6 +1022,597 @@ fn print_execution_summary(report: &ExecutionReport, journal_path: &Path) {
         println!("All duplicate files were safely moved to quarantine.");
     } else {
         println!("Warning: Some actions failed. Inspect the journal audit trail for diagnostics.");
+    }
+}
+
+fn resolve_journal_path(custom: Option<PathBuf>, target_dir: Option<&Path>) -> PathBuf {
+    if let Some(path) = custom {
+        return path;
+    }
+    if let Some(dir) = target_dir {
+        return dir.join(".reclaim").join("journal.db");
+    }
+    let cwd_journal = PathBuf::from(".reclaim").join("journal.db");
+    if cwd_journal.exists() {
+        return cwd_journal;
+    }
+    cwd_journal
+}
+
+fn parse_and_run_undo(raw_args: &[String]) -> ExitCode {
+    let mut target_dir = None;
+    let mut target_session = None;
+    let mut use_last = false;
+    let mut dry_run = false;
+    let mut custom_journal = None;
+    let mut json_output = false;
+    let mut halt_on_error = false;
+
+    let mut i = 0;
+    while i < raw_args.len() {
+        match raw_args[i].as_str() {
+            "-h" | "--help" => {
+                print_undo_help();
+                return ExitCode::SUCCESS;
+            }
+            "--dry-run" => {
+                dry_run = true;
+                i += 1;
+            }
+            "--last" => {
+                use_last = true;
+                i += 1;
+            }
+            "--halt-on-error" => {
+                halt_on_error = true;
+                i += 1;
+            }
+            "--json" => {
+                json_output = true;
+                i += 1;
+            }
+            "--session" => {
+                i += 1;
+                if i >= raw_args.len() {
+                    eprintln!("Error: --session requires a UUID");
+                    return ExitCode::FAILURE;
+                }
+                match SessionId::parse_str(&raw_args[i]) {
+                    Ok(sid) => target_session = Some(sid),
+                    Err(e) => {
+                        eprintln!("Error: invalid session UUID '{}': {}", raw_args[i], e);
+                        return ExitCode::FAILURE;
+                    }
+                }
+                i += 1;
+            }
+            val if val.starts_with("--session=") => {
+                let uuid_str = val.trim_start_matches("--session=");
+                match SessionId::parse_str(uuid_str) {
+                    Ok(sid) => target_session = Some(sid),
+                    Err(e) => {
+                        eprintln!("Error: invalid session UUID '{}': {}", uuid_str, e);
+                        return ExitCode::FAILURE;
+                    }
+                }
+                i += 1;
+            }
+            "--journal" => {
+                i += 1;
+                if i >= raw_args.len() {
+                    eprintln!("Error: --journal requires a path");
+                    return ExitCode::FAILURE;
+                }
+                custom_journal = Some(PathBuf::from(&raw_args[i]));
+                i += 1;
+            }
+            val if val.starts_with("--journal=") => {
+                custom_journal = Some(PathBuf::from(val.trim_start_matches("--journal=")));
+                i += 1;
+            }
+            other if !other.starts_with('-') && target_dir.is_none() => {
+                target_dir = Some(PathBuf::from(other));
+                i += 1;
+            }
+            other => {
+                eprintln!("Error: unrecognized argument '{}'", other);
+                print_undo_help();
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
+    if target_session.is_some() && use_last {
+        eprintln!("Error: Cannot specify both --session and --last.");
+        return ExitCode::FAILURE;
+    }
+
+    let journal_path = resolve_journal_path(custom_journal, target_dir.as_deref());
+    if !journal_path.exists() {
+        eprintln!(
+            "Error: SQLite action journal database not found at '{}'.",
+            journal_path.display()
+        );
+        eprintln!("Please specify a valid journal path using --journal <path>.");
+        return ExitCode::FAILURE;
+    }
+
+    let mut journal = match ActionJournal::open(&journal_path) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!(
+                "Error opening SQLite journal at '{}': {}",
+                journal_path.display(),
+                e
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let session_id = match target_session {
+        Some(sid) => sid,
+        None => {
+            let found = match journal.get_last_executed_session() {
+                Ok(Some(s)) => Some(s.session_id),
+                _ => match journal.get_last_session() {
+                    Ok(Some(s)) => Some(s.session_id),
+                    _ => None,
+                },
+            };
+
+            match found {
+                Some(sid) => sid,
+                None => {
+                    eprintln!(
+                        "Error: No execution sessions found in journal '{}'.",
+                        journal_path.display()
+                    );
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+    };
+
+    let undo_options = UndoOptions {
+        dry_run,
+        halt_on_error,
+    };
+    let reverter = SafeReverter::new(undo_options);
+
+    if json_output {
+        match reverter.revert_session(&mut journal, session_id) {
+            Ok(report) => match serde_json::to_string_pretty(&report) {
+                Ok(json_str) => {
+                    println!("{}", json_str);
+                    if report.actions_conflicted > 0 {
+                        ExitCode::FAILURE
+                    } else {
+                        ExitCode::SUCCESS
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to serialize undo report to JSON: {}", e);
+                    ExitCode::FAILURE
+                }
+            },
+            Err(e) => {
+                eprintln!("Error executing undo: {}", e);
+                ExitCode::FAILURE
+            }
+        }
+    } else {
+        println!("Reclaim Safe Conditional Undo v{}", VERSION);
+        println!("Target session:     {}", session_id);
+        println!("Journal database:   {}", journal_path.display());
+        println!(
+            "Execution mode:     {}",
+            if dry_run {
+                "DRY-RUN (Pre-validation & conflict detection; NO files will be moved)"
+            } else {
+                "LIVE (Atomic restoration to original paths)"
+            }
+        );
+        println!("--------------------------------------------------");
+        println!("Validating restoration preconditions and destination vacancies...");
+        println!();
+
+        let report_res =
+            reverter.revert_session_with_callback(&mut journal, session_id, |event| match event {
+                UndoProgressEvent::Validating { .. } => {}
+                UndoProgressEvent::Restoring { .. } => {}
+                UndoProgressEvent::Restored {
+                    source,
+                    bytes_restored,
+                    dry_run,
+                    ..
+                } => {
+                    if dry_run {
+                        println!(
+                            "  ✔ [DRY RUN VALIDATED] '{}' ({} to restore)",
+                            source.display(),
+                            format_bytes(bytes_restored)
+                        );
+                    } else {
+                        println!(
+                            "  ✔ [RESTORED] '{}' ({} restored)",
+                            source.display(),
+                            format_bytes(bytes_restored)
+                        );
+                    }
+                }
+                UndoProgressEvent::Conflict { source, reason, .. } => {
+                    eprintln!("  ✖ [CONFLICT] '{}': {}", source.display(), reason);
+                }
+                UndoProgressEvent::Skipped { source, reason, .. } => {
+                    println!("  - [SKIPPED] '{}': {}", source.display(), reason);
+                }
+            });
+
+        let report = match report_res {
+            Ok(rep) => rep,
+            Err(e) => {
+                eprintln!();
+                eprintln!("Undo failed: {}", e);
+                return ExitCode::FAILURE;
+            }
+        };
+
+        println!();
+        print_undo_summary(&report, &journal_path);
+
+        if report.actions_conflicted > 0 {
+            ExitCode::FAILURE
+        } else {
+            ExitCode::SUCCESS
+        }
+    }
+}
+
+fn print_undo_summary(report: &UndoReport, journal_path: &Path) {
+    println!("--------------------------------------------------");
+    println!("Undo Summary");
+    println!("--------------------------------------------------");
+    println!(
+        "Status:                {}",
+        if report.dry_run {
+            "Simulated (Dry Run)"
+        } else if report.actions_conflicted == 0 {
+            "Completed Successfully"
+        } else {
+            "Completed with Conflicts"
+        }
+    );
+    println!("Duration:              {:.2?}", report.elapsed);
+    if let Some(sid) = report.session_id {
+        println!("Session ID:            {}", sid);
+    }
+    println!("Total actions:         {}", report.total_actions_considered);
+    println!("Files restored:        {}", report.actions_restored);
+    println!("Conflicts encountered: {}", report.actions_conflicted);
+    println!("Actions skipped:       {}", report.actions_skipped);
+    println!(
+        "Storage restored:      {} ({} bytes)",
+        format_bytes(report.bytes_restored),
+        report.bytes_restored
+    );
+    println!("Journal path:          {}", journal_path.display());
+    println!("--------------------------------------------------");
+    if report.dry_run {
+        println!("Dry run mode active: Zero filesystem changes were committed.");
+    } else if report.actions_conflicted == 0 {
+        println!("All files were safely restored to their original locations.");
+    } else {
+        println!(
+            "Safety Guarantee: Occupied destinations and conflicted files were NOT overwritten."
+        );
+        println!("Quarantined copies remain safely preserved.");
+    }
+}
+
+fn parse_and_run_recover(raw_args: &[String]) -> ExitCode {
+    let mut target_dir = None;
+    let mut custom_journal = None;
+    let mut json_output = false;
+
+    let mut i = 0;
+    while i < raw_args.len() {
+        match raw_args[i].as_str() {
+            "-h" | "--help" => {
+                print_recover_help();
+                return ExitCode::SUCCESS;
+            }
+            "--json" => {
+                json_output = true;
+                i += 1;
+            }
+            "--journal" => {
+                i += 1;
+                if i >= raw_args.len() {
+                    eprintln!("Error: --journal requires a path");
+                    return ExitCode::FAILURE;
+                }
+                custom_journal = Some(PathBuf::from(&raw_args[i]));
+                i += 1;
+            }
+            val if val.starts_with("--journal=") => {
+                custom_journal = Some(PathBuf::from(val.trim_start_matches("--journal=")));
+                i += 1;
+            }
+            other if !other.starts_with('-') && target_dir.is_none() => {
+                target_dir = Some(PathBuf::from(other));
+                i += 1;
+            }
+            other => {
+                eprintln!("Error: unrecognized argument '{}'", other);
+                print_recover_help();
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
+    let journal_path = resolve_journal_path(custom_journal, target_dir.as_deref());
+    if !journal_path.exists() {
+        eprintln!(
+            "Error: SQLite action journal database not found at '{}'.",
+            journal_path.display()
+        );
+        return ExitCode::FAILURE;
+    }
+
+    let mut journal = match ActionJournal::open(&journal_path) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!(
+                "Error opening SQLite journal at '{}': {}",
+                journal_path.display(),
+                e
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+
+    match reclaim_storage::reconcile_startup_state(&mut journal) {
+        Ok(report) => {
+            if json_output {
+                match serde_json::to_string_pretty(&report) {
+                    Ok(json_str) => println!("{}", json_str),
+                    Err(e) => {
+                        eprintln!("Failed to serialize recovery report to JSON: {}", e);
+                        return ExitCode::FAILURE;
+                    }
+                }
+            } else {
+                println!(
+                    "Reclaim Crash Recovery & Reconciliation Engine v{}",
+                    VERSION
+                );
+                println!("Journal database: {}", journal_path.display());
+                println!("--------------------------------------------------");
+                if report.is_clean {
+                    println!("✔ All previous cleanup sessions completed cleanly.");
+                    println!("  No dangling in-flight actions or interrupted sessions found.");
+                } else {
+                    println!("Crash reconciliation completed:");
+                    println!(
+                        "  Dangling in-flight actions inspected: {}",
+                        report.actions_checked
+                    );
+                    println!(
+                        "  Actions resolved as Completed:       {}",
+                        report.actions_resolved_completed
+                    );
+                    println!(
+                        "  Actions resolved as Failed:          {}",
+                        report.actions_resolved_failed
+                    );
+                    println!(
+                        "  Interrupted sessions reconciled:     {}",
+                        report.sessions_interrupted
+                    );
+                    if !report.details.is_empty() {
+                        println!();
+                        println!("Reconciled Actions:");
+                        for d in &report.details {
+                            println!(
+                                "  [{}] Action {} ({})",
+                                d.final_state,
+                                d.action_id,
+                                d.source_path.display()
+                            );
+                            println!("         {}", d.note);
+                        }
+                    }
+                }
+                println!("--------------------------------------------------");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Recovery failed: {}", e);
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn parse_and_run_history(raw_args: &[String]) -> ExitCode {
+    let mut target_dir = None;
+    let mut target_session = None;
+    let mut custom_journal = None;
+    let mut json_output = false;
+
+    let mut i = 0;
+    while i < raw_args.len() {
+        match raw_args[i].as_str() {
+            "-h" | "--help" => {
+                print_history_help();
+                return ExitCode::SUCCESS;
+            }
+            "--json" => {
+                json_output = true;
+                i += 1;
+            }
+            "--session" => {
+                i += 1;
+                if i >= raw_args.len() {
+                    eprintln!("Error: --session requires a UUID");
+                    return ExitCode::FAILURE;
+                }
+                match SessionId::parse_str(&raw_args[i]) {
+                    Ok(sid) => target_session = Some(sid),
+                    Err(e) => {
+                        eprintln!("Error: invalid session UUID '{}': {}", raw_args[i], e);
+                        return ExitCode::FAILURE;
+                    }
+                }
+                i += 1;
+            }
+            val if val.starts_with("--session=") => {
+                let uuid_str = val.trim_start_matches("--session=");
+                match SessionId::parse_str(uuid_str) {
+                    Ok(sid) => target_session = Some(sid),
+                    Err(e) => {
+                        eprintln!("Error: invalid session UUID '{}': {}", uuid_str, e);
+                        return ExitCode::FAILURE;
+                    }
+                }
+                i += 1;
+            }
+            "--journal" => {
+                i += 1;
+                if i >= raw_args.len() {
+                    eprintln!("Error: --journal requires a path");
+                    return ExitCode::FAILURE;
+                }
+                custom_journal = Some(PathBuf::from(&raw_args[i]));
+                i += 1;
+            }
+            val if val.starts_with("--journal=") => {
+                custom_journal = Some(PathBuf::from(val.trim_start_matches("--journal=")));
+                i += 1;
+            }
+            other if !other.starts_with('-') && target_dir.is_none() => {
+                target_dir = Some(PathBuf::from(other));
+                i += 1;
+            }
+            other => {
+                eprintln!("Error: unrecognized argument '{}'", other);
+                print_history_help();
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
+    let journal_path = resolve_journal_path(custom_journal, target_dir.as_deref());
+    if !journal_path.exists() {
+        eprintln!(
+            "Error: SQLite action journal database not found at '{}'.",
+            journal_path.display()
+        );
+        return ExitCode::FAILURE;
+    }
+
+    let journal = match ActionJournal::open(&journal_path) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!(
+                "Error opening SQLite journal at '{}': {}",
+                journal_path.display(),
+                e
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if let Some(session_id) = target_session {
+        match journal.fetch_session_history(session_id) {
+            Ok(session) => {
+                let actions = journal
+                    .list_actions_for_session(session_id)
+                    .unwrap_or_default();
+                if json_output {
+                    let json_val = serde_json::json!({
+                        "session": session,
+                        "actions": actions,
+                    });
+                    println!("{}", serde_json::to_string_pretty(&json_val).unwrap());
+                } else {
+                    println!("Session Details: {}", session_id);
+                    println!("Target root:     {}", session.target_root.display());
+                    println!("Status:          {}", session.status);
+                    println!("Keeper policy:   {}", session.keeper_policy);
+                    println!("Plans count:     {}", session.plan_ids.len());
+                    println!("Actions count:   {}", actions.len());
+                    println!("--------------------------------------------------");
+                    for a in &actions {
+                        println!(
+                            "  [{:<9}] Action {} ({})",
+                            a.state,
+                            a.action_id,
+                            a.source_path.display()
+                        );
+                        println!("            Quarantine: {}", a.quarantine_path.display());
+                        println!("            Keeper:     {}", a.keeper_path.display());
+                    }
+                    println!("--------------------------------------------------");
+                }
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("Error retrieving session '{}': {}", session_id, e);
+                ExitCode::FAILURE
+            }
+        }
+    } else {
+        match journal.list_all_sessions() {
+            Ok(sessions) => {
+                let mut summaries = Vec::new();
+                for s in &sessions {
+                    if let Ok(sum) = journal.fetch_session_summary(s.session_id) {
+                        summaries.push(sum);
+                    }
+                }
+
+                if json_output {
+                    println!("{}", serde_json::to_string_pretty(&summaries).unwrap());
+                } else {
+                    println!("Reclaim Cleanup Session History v{}", VERSION);
+                    println!("Journal database: {}", journal_path.display());
+                    println!("--------------------------------------------------");
+                    if summaries.is_empty() {
+                        println!("No execution sessions recorded in journal.");
+                    } else {
+                        println!(
+                            "{:<36}  {:<11}  {:<14}  {:<13}  TARGET ROOT",
+                            "SESSION ID", "STATUS", "ACTIONS (C/R/F)", "QUARANTINED"
+                        );
+                        println!(
+                            "{:-<36}  {:-<11}  {:-<14}  {:-<13}  {:-<20}",
+                            "", "", "", "", ""
+                        );
+                        for s in &summaries {
+                            let actions_summary = format!(
+                                "{}/{}/{}",
+                                s.completed_actions, s.reverted_actions, s.failed_actions
+                            );
+                            println!(
+                                "{:<36}  {:<11}  {:<14}  {:<13}  {}",
+                                s.session_id,
+                                s.status,
+                                actions_summary,
+                                format_bytes(s.active_quarantined_bytes),
+                                s.target_root.display()
+                            );
+                        }
+                    }
+                    println!("--------------------------------------------------");
+                }
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("Error querying session history: {}", e);
+                ExitCode::FAILURE
+            }
+        }
     }
 }
 

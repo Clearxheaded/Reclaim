@@ -5,7 +5,7 @@ use crate::error::StorageError;
 use crate::schema::{apply_migrations, apply_pragmas};
 use crate::types::{
     ActionId, ActionState, JournalEvent, JournaledAction, PlanDetails, PlanId, SessionDetails,
-    SessionId, SessionStatus,
+    SessionHistorySummary, SessionId, SessionStatus,
 };
 use reclaim_core::file_id::FileId;
 use reclaim_core::planner::{
@@ -740,6 +740,200 @@ impl ActionJournal {
         }
 
         Ok(sessions)
+    }
+
+    /// Lists all actions belonging to a session across all its plans in sequence order.
+    pub fn list_actions_for_session(
+        &self,
+        session_id: SessionId,
+    ) -> Result<Vec<JournaledAction>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            r#"
+            SELECT
+                a.action_id, a.plan_id, a.action_index, a.source_path, a.quarantine_path, a.keeper_path,
+                a.rationale, a.state, a.created_at, a.updated_at,
+                p.expected_size, p.expected_hash, p.source_modified, p.source_file_id, p.keeper_modified, p.keeper_file_id
+            FROM actions a
+            JOIN preconditions p ON a.action_id = p.action_id
+            JOIN plans pl ON a.plan_id = pl.plan_id
+            WHERE pl.session_id = ?
+            ORDER BY pl.created_at ASC, a.action_index ASC
+            "#,
+        )?;
+
+        let rows = stmt.query_map([session_id.to_string()], parse_journaled_action_row)?;
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+
+        Ok(actions)
+    }
+
+    /// Retrieves the most recent session recorded in the journal.
+    pub fn get_last_session(&self) -> Result<Option<SessionDetails>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT session_id FROM sessions ORDER BY started_at DESC LIMIT 1")?;
+        let mut rows = stmt.query_map([], |row| {
+            let sid_str: String = row.get(0)?;
+            let session_id = SessionId::parse_str(&sid_str)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            Ok(session_id)
+        })?;
+
+        match rows.next() {
+            Some(res) => {
+                let sid = res?;
+                Ok(Some(self.fetch_session_history(sid)?))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Retrieves the most recent session containing at least one Completed or Reverted action.
+    pub fn get_last_executed_session(&self) -> Result<Option<SessionDetails>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            r#"
+            SELECT s.session_id
+            FROM sessions s
+            JOIN plans p ON s.session_id = p.session_id
+            JOIN actions a ON p.plan_id = a.plan_id
+            WHERE a.state IN ('Completed', 'Reverted')
+            ORDER BY s.started_at DESC
+            LIMIT 1
+            "#,
+        )?;
+
+        let mut rows = stmt.query_map([], |row| {
+            let sid_str: String = row.get(0)?;
+            let session_id = SessionId::parse_str(&sid_str)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            Ok(session_id)
+        })?;
+
+        match rows.next() {
+            Some(res) => {
+                let sid = res?;
+                Ok(Some(self.fetch_session_history(sid)?))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Returns all recorded sessions ordered from newest to oldest.
+    pub fn list_all_sessions(&self) -> Result<Vec<SessionDetails>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT session_id FROM sessions ORDER BY started_at DESC")?;
+
+        let rows = stmt.query_map([], |row| {
+            let sid_str: String = row.get(0)?;
+            let session_id = SessionId::parse_str(&sid_str)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            Ok(session_id)
+        })?;
+
+        let mut sessions = Vec::new();
+        for row in rows {
+            let sid = row?;
+            sessions.push(self.fetch_session_history(sid)?);
+        }
+
+        Ok(sessions)
+    }
+
+    /// Records a diagnostic audit log event for an action without changing its state.
+    pub fn log_action_event(
+        &self,
+        action_id: ActionId,
+        state: ActionState,
+        details: &str,
+    ) -> Result<(), StorageError> {
+        let now = format_rfc3339(SystemTime::now());
+        self.conn.execute(
+            r#"
+            INSERT INTO action_events (action_id, from_state, to_state, timestamp, details)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+            params![
+                action_id.to_string(),
+                state.as_str(),
+                state.as_str(),
+                now,
+                details,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Computes aggregated statistics for a session, including actions by state and storage metrics.
+    pub fn fetch_session_summary(
+        &self,
+        session_id: SessionId,
+    ) -> Result<SessionHistorySummary, StorageError> {
+        let session = self.fetch_session_history(session_id)?;
+
+        let mut stmt = self.conn.prepare(
+            r#"
+            SELECT
+                a.state,
+                p.expected_size
+            FROM actions a
+            JOIN preconditions p ON a.action_id = p.action_id
+            JOIN plans pl ON a.plan_id = pl.plan_id
+            WHERE pl.session_id = ?
+            "#,
+        )?;
+
+        let rows = stmt.query_map([session_id.to_string()], |row| {
+            let state_str: String = row.get(0)?;
+            let size: i64 = row.get(1)?;
+            let state = ActionState::from_str(&state_str)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            Ok((state, size as u64))
+        })?;
+
+        let mut total_actions = 0;
+        let mut completed_actions = 0;
+        let mut reverted_actions = 0;
+        let mut failed_actions = 0;
+        let mut active_quarantined_bytes = 0u64;
+        let mut restored_bytes = 0u64;
+
+        for r in rows {
+            let (state, size) = r?;
+            total_actions += 1;
+            match state {
+                ActionState::Completed => {
+                    completed_actions += 1;
+                    active_quarantined_bytes = active_quarantined_bytes.saturating_add(size);
+                }
+                ActionState::Reverted => {
+                    reverted_actions += 1;
+                    restored_bytes = restored_bytes.saturating_add(size);
+                }
+                ActionState::Failed => {
+                    failed_actions += 1;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(SessionHistorySummary {
+            session_id,
+            target_root: session.target_root,
+            status: session.status,
+            started_at: session.started_at,
+            ended_at: session.ended_at,
+            total_plans: session.plan_ids.len(),
+            total_actions,
+            completed_actions,
+            reverted_actions,
+            failed_actions,
+            active_quarantined_bytes,
+            restored_bytes,
+        })
     }
 
     /// Exposes underlying SQLite connection reference for testing or raw inspection.
