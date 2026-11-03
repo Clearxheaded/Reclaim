@@ -25,7 +25,6 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Identifies the operating-system level strategy utilized for extent deduplication.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -310,6 +309,7 @@ fn deduplicate_apfs_internal(
 ) -> Result<CowDeduplicationResult, CowError> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     // 1. Strict precondition revalidation
     let (file_size, verified_hash) = validate_cow_preconditions(source, target)?;
@@ -320,7 +320,7 @@ fn deduplicate_apfs_internal(
     let src_id = FileId::from_metadata(&src_meta);
     let target_id = FileId::from_metadata(&target_meta);
 
-    if src_id == target_id {
+    if src_id.is_some() && src_id == target_id {
         return Ok(CowDeduplicationResult {
             source: source.to_path_buf(),
             target: target.to_path_buf(),
@@ -512,7 +512,7 @@ fn deduplicate_linux_ficlone_internal(
     let src_id = FileId::from_metadata(&src_meta);
     let target_id = FileId::from_metadata(&target_meta);
 
-    if src_id == target_id {
+    if src_id.is_some() && src_id == target_id {
         return Ok(CowDeduplicationResult {
             source: source.to_path_buf(),
             target: target.to_path_buf(),
@@ -625,7 +625,7 @@ impl ExtentDeduplicator for SyntheticCowDeduplicator {
         let src_id = FileId::from_metadata(&src_meta);
         let target_id = FileId::from_metadata(&target_meta);
 
-        if src_id == target_id {
+        if src_id.is_some() && src_id == target_id {
             return Ok(CowDeduplicationResult {
                 source: source.to_path_buf(),
                 target: target.to_path_buf(),

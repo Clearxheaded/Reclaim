@@ -498,7 +498,7 @@ fn atomic_move_windows(source: &Path, destination: &Path) -> Result<(), Mutation
 /// Resolves the nearest existing ancestor of `destination` to verify volume compatibility
 /// without prematurely creating directories on disk.
 pub fn verify_same_filesystem(source: &Path, destination: &Path) -> Result<(), MutationError> {
-    let src_meta = fs::symlink_metadata(source).map_err(|e| MutationError::SourceIo {
+    let _src_meta = fs::symlink_metadata(source).map_err(|e| MutationError::SourceIo {
         path: source.to_path_buf(),
         error: e,
     })?;
@@ -517,7 +517,7 @@ pub fn verify_same_filesystem(source: &Path, destination: &Path) -> Result<(), M
         }
     };
 
-    let dst_parent_meta =
+    let _dst_parent_meta =
         fs::metadata(existing_parent).map_err(|e| MutationError::DestinationParentIo {
             path: existing_parent.to_path_buf(),
             error: e,
@@ -526,7 +526,7 @@ pub fn verify_same_filesystem(source: &Path, destination: &Path) -> Result<(), M
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if src_meta.dev() != dst_parent_meta.dev() {
+        if _src_meta.dev() != _dst_parent_meta.dev() {
             return Err(MutationError::CrossDeviceMoveUnsupported {
                 source: source.to_path_buf(),
                 destination: destination.to_path_buf(),
@@ -536,17 +536,25 @@ pub fn verify_same_filesystem(source: &Path, destination: &Path) -> Result<(), M
 
     #[cfg(windows)]
     {
-        use std::os::windows::fs::MetadataExt;
-        let src_vol = src_meta.volume_serial_number();
-        let dst_vol = dst_parent_meta.volume_serial_number();
-        match (src_vol, dst_vol) {
-            (Some(v1), Some(v2)) if v1 != v2 => {
+        use std::path::Component;
+        let get_prefix = |p: &Path| -> Option<String> {
+            let canon = fs::canonicalize(p).ok();
+            let path_to_check = canon.as_deref().unwrap_or(p);
+            path_to_check.components().find_map(|c| match c {
+                Component::Prefix(prefix) => {
+                    Some(prefix.as_os_str().to_string_lossy().to_uppercase())
+                }
+                _ => None,
+            })
+        };
+
+        if let (Some(src_p), Some(dst_p)) = (get_prefix(source), get_prefix(existing_parent)) {
+            if src_p != dst_p {
                 return Err(MutationError::CrossDeviceMoveUnsupported {
                     source: source.to_path_buf(),
                     destination: destination.to_path_buf(),
                 });
             }
-            _ => {}
         }
     }
 

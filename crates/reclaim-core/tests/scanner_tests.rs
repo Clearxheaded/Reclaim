@@ -1,7 +1,6 @@
-use reclaim_core::{
-    scan_directory, CancellationToken, FileId, RootScanError, ScanErrorKind, ScanOptions,
-    SkipReason,
-};
+use reclaim_core::{scan_directory, CancellationToken, RootScanError, ScanOptions};
+#[cfg(unix)]
+use reclaim_core::{FileId, ScanErrorKind, SkipReason};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};

@@ -244,7 +244,7 @@ fn test_precondition_capture() {
     assert!(action.preconditions.source_modified.is_some());
     assert!(action.preconditions.keeper_modified.is_some());
 
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     {
         assert!(action.preconditions.source_file_id.is_some());
         assert!(action.preconditions.keeper_file_id.is_some());
@@ -255,6 +255,7 @@ fn test_precondition_capture() {
 }
 
 #[test]
+#[cfg(unix)]
 fn test_pure_hard_link_group_zero_actions() {
     let fixture = TestDir::new("pure_hard_links");
     let content = b"Pure hard links share same physical blocks; 0 reclaimable bytes";
@@ -291,6 +292,7 @@ fn test_pure_hard_link_group_zero_actions() {
 }
 
 #[test]
+#[cfg(unix)]
 fn test_duplicate_physical_copies_with_hard_links() {
     let fixture = TestDir::new("copies_with_hard_links");
     let content = b"Mixture of physical copies and hard link aliases";

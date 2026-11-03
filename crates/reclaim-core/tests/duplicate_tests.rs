@@ -208,6 +208,7 @@ fn test_empty_files_handling() {
 }
 
 #[test]
+#[cfg(unix)]
 fn test_hard_links_and_distinct_copies() {
     let fixture = TestDir::new("hard_links");
     let content = b"Physical storage blocks shared between hard link entries.";
@@ -251,6 +252,7 @@ fn test_hard_links_and_distinct_copies() {
 }
 
 #[test]
+#[cfg(unix)]
 fn test_pure_hard_links_zero_reclaimable_bytes() {
     let fixture = TestDir::new("pure_hard_links");
     let content = b"Pure hard link test - no independent duplicate copies.";

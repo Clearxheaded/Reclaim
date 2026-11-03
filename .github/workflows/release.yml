@@ -39,6 +39,9 @@ jobs:
           - name: Windows MSI & NSIS Installer
             os: windows-latest
             artifact_pattern: "target/release/bundle/msi/*.msi,target/release/bundle/nsis/*.exe"
+          - name: Linux Debian & AppImage Package
+            os: ubuntu-latest
+            artifact_pattern: "target/release/bundle/deb/*.deb,target/release/bundle/appimage/*.AppImage"
 
     steps:
       - name: Checkout repository
@@ -51,6 +54,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
+
+      - name: Install Linux system dependencies (WebKitGTK & Tauri 2)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
@@ -79,6 +88,8 @@ jobs:
             target/release/bundle/dmg/*.dmg
             target/release/bundle/msi/*.msi
             target/release/bundle/nsis/*.exe
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
           if-no-files-found: warn
 
       - name: Publish GitHub Release
@@ -89,6 +100,8 @@ jobs:
             target/release/bundle/dmg/*.dmg
             target/release/bundle/msi/*.msi
             target/release/bundle/nsis/*.exe
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || (inputs.tag_name || 'v0.1.0') }}
           name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || (inputs.tag_name || 'v0.1.0') }}
           draft: ${{ github.event_name == 'workflow_dispatch' && (inputs.draft == true) || false }}

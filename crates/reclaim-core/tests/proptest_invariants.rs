@@ -182,6 +182,7 @@ proptest! {
     /// When exact duplicates are found, storage calculations must conservatively
     /// reflect distinct physical copies and treat hard links as 0 B reclaimable.
     #[test]
+    #[cfg(unix)]
     fn prop_hard_link_accounting_and_duplicate_group_properties(
         content in prop::collection::vec(any::<u8>(), 10..512),
         hard_link_count in 1usize..4usize,

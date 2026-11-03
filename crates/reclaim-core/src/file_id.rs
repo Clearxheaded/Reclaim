@@ -32,18 +32,7 @@ impl FileId {
             })
         }
 
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::MetadataExt;
-            let volume = meta.volume_serial_number()?;
-            let index = meta.file_index()?;
-            Some(FileId::Windows {
-                volume_serial_number: volume,
-                file_index: index,
-            })
-        }
-
-        #[cfg(not(any(unix, windows)))]
+        #[cfg(not(unix))]
         {
             let _ = meta;
             None
@@ -89,8 +78,11 @@ mod tests {
         let meta = std::fs::symlink_metadata(&test_path).expect("failed to get metadata");
         let file_id = FileId::from_metadata(&meta);
 
-        #[cfg(any(unix, windows))]
+        #[cfg(unix)]
         assert!(file_id.is_some());
+
+        #[cfg(not(unix))]
+        assert!(file_id.is_none());
 
         let _ = std::fs::remove_file(&test_path);
     }

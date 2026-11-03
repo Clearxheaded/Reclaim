@@ -1,7 +1,8 @@
+#[cfg(target_os = "macos")]
 use reclaim_core::mutation::cow::{
-    deduplicate_via_cow, default_cow_deduplicator, ApfsCloneDeduplicator, CowError,
-    ExtentDeduplicator, SyntheticCowDeduplicator,
+    deduplicate_via_cow, default_cow_deduplicator, ApfsCloneDeduplicator,
 };
+use reclaim_core::mutation::cow::{CowError, ExtentDeduplicator, SyntheticCowDeduplicator};
 use reclaim_core::mutation::PreconditionError;
 use std::fs;
 use tempfile::TempDir;
@@ -25,6 +26,7 @@ fn test_cow_deduplication_synthetic_happy_path() {
     assert!(!result.already_shared);
 }
 
+#[cfg(unix)]
 #[test]
 fn test_cow_deduplication_synthetic_already_shared_hard_link() {
     let temp_dir = TempDir::new().unwrap();
