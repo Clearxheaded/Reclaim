@@ -1,10 +1,10 @@
 // Formatting and Display Utilities
 
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
+export function formatBytes(bytes?: number | null): string {
+  if (bytes === undefined || bytes === null || isNaN(bytes) || bytes <= 0) return '0 B';
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   const val = bytes / Math.pow(k, i);
   return `${val.toFixed(i === 0 ? 0 : 2)} ${sizes[i]}`;
 }
@@ -56,7 +56,8 @@ export function getFileExtension(path: string): string {
   return basename.substring(dotIndex + 1).toLowerCase();
 }
 
-export function formatNumber(num: number): string {
+export function formatNumber(num?: number | null): string {
+  if (num === undefined || num === null || isNaN(num)) return '0';
   return new Intl.NumberFormat().format(num);
 }
 
@@ -77,4 +78,3 @@ export function compareTimestamps(timeA?: number, timeB?: number): string {
     return `${Math.floor(absDiff / 86400)}d older`;
   }
 }
-

@@ -72,7 +72,7 @@ export const DirectoryPicker: React.FC<DirectoryPickerProps> = ({
               {targetDir ? (
                 <>
                   <div className="text-xs font-mono font-medium text-zinc-200 truncate">
-                    {targetDir.split('/').pop() || targetDir}
+                    {targetDir.split(/[/\\]/).pop() || targetDir}
                   </div>
                   <div className="text-[10px] font-mono text-zinc-500 truncate mt-0.5">
                     {targetDir}

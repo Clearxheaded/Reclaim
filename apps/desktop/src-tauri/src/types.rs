@@ -12,6 +12,12 @@ pub struct ScanProgressDto {
     pub files_discovered: u64,
     pub total_file_bytes: u64,
     pub current_directory: String,
+    pub files_scanned: u64,
+    pub directories_scanned: u64,
+    pub bytes_scanned: u64,
+    pub current_path: String,
+    pub symlinks_skipped: u64,
+    pub entries_scanned: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +33,10 @@ pub struct DuplicateProgressDto {
     pub current_file: u64,
     pub total_candidates: u64,
     pub current_path: String,
+    pub current_step: u64,
+    pub total_steps: u64,
+    pub bytes_processed: u64,
+    pub total_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +62,7 @@ pub struct DuplicateSummaryDto {
     pub duplicate_groups_count: usize,
     pub duplicate_files_count: usize,
     pub reclaimable_bytes: u64,
+    pub total_duplicate_bytes: u64,
     pub hard_link_savings_bytes: usize,
 }
 

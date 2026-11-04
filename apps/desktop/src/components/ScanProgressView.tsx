@@ -15,6 +15,17 @@ export const ScanProgressView: React.FC<ScanProgressViewProps> = ({
   onCancel,
 }) => {
   const isHashingStage = !!duplicateProgress;
+  const filesScanned = scanProgress?.files_scanned ?? scanProgress?.files_discovered ?? 0;
+  const directoriesScanned = scanProgress?.directories_scanned ?? scanProgress?.directories_visited ?? 0;
+  const bytesScanned = scanProgress?.bytes_scanned ?? scanProgress?.total_file_bytes ?? 0;
+  const currentPath =
+    scanProgress?.current_path ?? scanProgress?.current_directory ?? 'Starting traversal...';
+
+  // Duplicate candidate metrics
+  const currentCandidate = duplicateProgress?.current_file ?? duplicateProgress?.current_step ?? 0;
+  const totalCandidates = duplicateProgress?.total_candidates ?? duplicateProgress?.total_steps ?? 0;
+  const candidateFile =
+    duplicateProgress?.current_path ?? (duplicateProgress as any)?.current_file_path ?? currentPath;
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-y-auto bg-canvas select-none">
@@ -67,14 +78,17 @@ export const ScanProgressView: React.FC<ScanProgressViewProps> = ({
               <span>1. Traversal</span>
             </div>
             <div className="text-[11px] tabular-nums font-mono text-gray-300 truncate">
-              {scanProgress ? `${scanProgress.files_scanned} files` : 'Indexing...'}
+              {scanProgress ? `${filesScanned.toLocaleString()} files` : 'Indexing...'}
             </div>
           </div>
 
           {/* Stage 2: Prefix Filter */}
           <div
             className={`p-2.5 rounded border text-xs ${
-              isHashingStage && duplicateProgress.stage === 'PrefixHashing'
+              isHashingStage &&
+              (duplicateProgress.stage === 'PrefixHashing' ||
+                duplicateProgress.stage === 'GroupingBySize' ||
+                duplicateProgress.stage === 'SizeGrouping')
                 ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
                 : duplicateProgress?.stage === 'FullHashing'
                 ? 'bg-elevated/40 border-white/5 text-gray-400'
@@ -90,7 +104,13 @@ export const ScanProgressView: React.FC<ScanProgressViewProps> = ({
               <span>2. Prefix Filter</span>
             </div>
             <div className="text-[11px] tabular-nums font-mono text-gray-300 truncate">
-              {isHashingStage ? '16 KB Check' : 'Pending'}
+              {isHashingStage
+                ? duplicateProgress.stage === 'PrefixHashing'
+                  ? `${currentCandidate} / ${totalCandidates}`
+                  : duplicateProgress.stage === 'FullHashing'
+                  ? 'Completed'
+                  : 'Grouping sizes'
+                : 'Pending'}
             </div>
           </div>
 
@@ -107,7 +127,9 @@ export const ScanProgressView: React.FC<ScanProgressViewProps> = ({
               <span>3. Exact BLAKE3</span>
             </div>
             <div className="text-[11px] tabular-nums font-mono text-gray-300 truncate">
-              {duplicateProgress?.stage === 'FullHashing' ? 'Verification' : 'Pending'}
+              {duplicateProgress?.stage === 'FullHashing'
+                ? `${currentCandidate} / ${totalCandidates}`
+                : 'Pending'}
             </div>
           </div>
         </div>
@@ -119,27 +141,27 @@ export const ScanProgressView: React.FC<ScanProgressViewProps> = ({
               Files Traversed
             </span>
             <div className="text-base tabular-nums font-mono font-bold text-gray-200 mt-0.5">
-              {scanProgress ? scanProgress.files_scanned.toLocaleString() : '0'}
+              {filesScanned.toLocaleString()}
             </div>
             <div className="text-[10px] tabular-nums font-mono text-gray-500 mt-0.5">
-              {scanProgress?.directories_scanned || 0} folders, {scanProgress?.symlinks_skipped || 0} symlinks skipped
+              {directoriesScanned.toLocaleString()} folders visited
             </div>
           </div>
 
           <div>
             <span className="text-[10px] uppercase font-semibold tracking-wider text-gray-500">
-              {isHashingStage ? 'Bytes Hashed' : 'Bytes Scanned'}
+              {isHashingStage ? 'Hashing Candidates' : 'Data Discovered'}
             </span>
             <div className="text-base tabular-nums font-mono font-bold text-gray-200 mt-0.5">
-              {formatBytes(
-                isHashingStage
-                  ? duplicateProgress.bytes_processed
-                  : scanProgress?.bytes_scanned || 0
-              )}
+              {isHashingStage
+                ? totalCandidates > 0
+                  ? `${currentCandidate} of ${totalCandidates}`
+                  : 'Evaluating...'
+                : formatBytes(bytesScanned)}
             </div>
             <div className="text-[10px] tabular-nums font-mono text-gray-500 mt-0.5">
-              {isHashingStage && duplicateProgress.total_bytes > 0
-                ? `of ${formatBytes(duplicateProgress.total_bytes)} candidate data`
+              {isHashingStage
+                ? `${formatBytes(bytesScanned)} total file data`
                 : 'Streaming stream metadata'}
             </div>
           </div>
@@ -151,9 +173,7 @@ export const ScanProgressView: React.FC<ScanProgressViewProps> = ({
             <span>Currently Examining:</span>
           </div>
           <div className="p-2 rounded bg-elevated/80 border border-white/5 font-mono text-[11px] text-gray-300 truncate">
-            {isHashingStage
-              ? duplicateProgress.current_file
-              : scanProgress?.current_path || 'Starting traversal...'}
+            {isHashingStage ? candidateFile : currentPath}
           </div>
         </div>
       </div>

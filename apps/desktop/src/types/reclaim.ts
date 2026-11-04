@@ -1,23 +1,35 @@
 // Domain Types and IPC Contracts for Reclaim Desktop
 
 export interface ScanProgressEvent {
-  entries_scanned: number;
-  files_scanned: number;
-  directories_scanned: number;
-  symlinks_skipped: number;
-  bytes_scanned: number;
-  current_path: string;
+  entries_scanned?: number;
+  files_scanned?: number;
+  directories_scanned?: number;
+  symlinks_skipped?: number;
+  bytes_scanned?: number;
+  current_path?: string;
+
+  // Backend DTO fields
+  directories_visited?: number;
+  files_discovered?: number;
+  total_file_bytes?: number;
+  current_directory?: string;
 }
 
-export type DuplicateStage = 'SizeGrouping' | 'PrefixHashing' | 'FullHashing';
+export type DuplicateStage =
+  | 'GroupingBySize'
+  | 'SizeGrouping'
+  | 'PrefixHashing'
+  | 'FullHashing';
 
 export interface DuplicateProgressEvent {
   stage: DuplicateStage;
-  current_step: number;
-  total_steps: number;
-  bytes_processed: number;
-  total_bytes: number;
-  current_file: string;
+  current_file?: string | number;
+  current_step?: number;
+  total_candidates?: number;
+  total_steps?: number;
+  bytes_processed?: number;
+  total_bytes?: number;
+  current_path?: string;
 }
 
 export interface ExecutionProgressEventPayload {
@@ -45,14 +57,15 @@ export interface FileEntryPayload {
   size: number;
   modified: number; // Unix timestamp seconds
   is_symlink: boolean;
-  device_id: number;
-  inode: number;
-  nlink: number;
+  device_id?: number;
+  inode?: number;
+  nlink?: number;
 }
 
 export interface PhysicalCopyPayload {
-  device_id: number;
-  inode: number;
+  device_id?: number;
+  inode?: number;
+  file_id?: string;
   primary_path: string;
   all_paths: string[];
 }
@@ -89,18 +102,21 @@ export type KeeperPolicy =
 export interface ActionPreconditionsPayload {
   expected_size: number;
   expected_blake3_hash: string;
-  expected_device_id: number;
-  expected_inode: number;
-  expected_nlink: number;
-  expected_modified: number;
+  expected_device_id?: number;
+  expected_inode?: number;
+  expected_nlink?: number;
+  expected_modified?: number;
+  source_file_id?: string;
+  keeper_file_id?: string;
 }
 
 export interface QuarantineActionPayload {
-  action_id: string;
+  action_id?: string;
   source_path: string;
   quarantine_path: string;
   keeper_path: string;
   preconditions: ActionPreconditionsPayload;
+  rationale?: string;
 }
 
 export interface CleanupPlanSummaryPayload {
@@ -218,4 +234,3 @@ export interface CandidateInvalidatedEvent {
 }
 
 export type ActiveTab = 'scan' | 'plan' | 'monitor' | 'history' | 'invariants';
-

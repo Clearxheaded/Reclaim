@@ -434,7 +434,7 @@ async function simulateMockExecution(
     const act = plan.actions[i];
     if (onProgress) {
       onProgress({
-        action_id: act.action_id,
+        action_id: act.action_id || ('act_' + i),
         source_path: act.source_path,
         quarantine_path: act.quarantine_path,
         state: 'Validating',
@@ -443,7 +443,7 @@ async function simulateMockExecution(
       });
       await new Promise((r) => setTimeout(r, 60));
       onProgress({
-        action_id: act.action_id,
+        action_id: act.action_id || ('act_' + i),
         source_path: act.source_path,
         quarantine_path: act.quarantine_path,
         state: 'Executing',
@@ -452,7 +452,7 @@ async function simulateMockExecution(
       });
       await new Promise((r) => setTimeout(r, 80));
       onProgress({
-        action_id: act.action_id,
+        action_id: act.action_id || ('act_' + i),
         source_path: act.source_path,
         quarantine_path: act.quarantine_path,
         state: 'Completed',
@@ -462,7 +462,7 @@ async function simulateMockExecution(
     }
     completed++;
     results.push({
-      action_id: act.action_id,
+      action_id: act.action_id || ('act_' + i),
       source_path: act.source_path,
       quarantine_path: act.quarantine_path,
       status: 'Completed' as const,

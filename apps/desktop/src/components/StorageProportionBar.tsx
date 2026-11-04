@@ -24,13 +24,13 @@ export const StorageProportionBar: React.FC<StorageProportionBarProps> = ({
   >(null);
 
   // Storage metric calculations
-  const totalDupBytes = summary.total_duplicate_bytes;
-  const reclaimableBytes = summary.reclaimable_bytes;
+  const reclaimableBytes = summary?.reclaimable_bytes ?? 0;
+  const totalDupBytes = summary?.total_duplicate_bytes ?? (reclaimableBytes * 2);
   const protectedKeeperBytes = Math.max(0, totalDupBytes - reclaimableBytes);
-  const hardLinkSavingsBytes = summary.hard_link_savings_bytes;
+  const hardLinkSavingsBytes = summary?.hard_link_savings_bytes ?? 0;
 
   // Total pool calculation
-  const totalScanned = Math.max(totalScannedBytes ?? totalDupBytes, totalDupBytes);
+  const totalScanned = Math.max(totalScannedBytes ?? totalDupBytes, totalDupBytes, 1);
   const uniqueBytes = Math.max(0, totalScanned - totalDupBytes);
 
   // Proportions

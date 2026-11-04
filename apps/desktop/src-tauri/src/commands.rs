@@ -63,6 +63,12 @@ pub async fn scan_and_find_duplicates(
                     files_discovered: p.files_discovered,
                     total_file_bytes: p.total_file_bytes,
                     current_directory: p.current_directory.to_string_lossy().to_string(),
+                    files_scanned: p.files_discovered,
+                    directories_scanned: p.directories_visited,
+                    bytes_scanned: p.total_file_bytes,
+                    current_path: p.current_directory.to_string_lossy().to_string(),
+                    symlinks_skipped: 0,
+                    entries_scanned: p.files_discovered + p.directories_visited,
                 },
             );
         });
@@ -114,6 +120,10 @@ pub async fn scan_and_find_duplicates(
                     current_file: cur_file,
                     total_candidates: tot_cand,
                     current_path: cur_path,
+                    current_step: cur_file,
+                    total_steps: tot_cand,
+                    bytes_processed: 0,
+                    total_bytes: 0,
                 },
             );
         });
@@ -167,6 +177,11 @@ pub async fn scan_and_find_duplicates(
             })
             .collect();
 
+        let total_duplicate_bytes: u64 = dup_output
+            .groups
+            .iter()
+            .map(|g| g.file_size * (g.entries.len() as u64))
+            .sum();
         let dto = DuplicateOutputDto {
             groups,
             summary: DuplicateSummaryDto {
@@ -174,6 +189,7 @@ pub async fn scan_and_find_duplicates(
                 duplicate_groups_count: dup_output.summary.duplicate_groups_count,
                 duplicate_files_count: dup_output.summary.duplicate_files_count,
                 reclaimable_bytes: dup_output.summary.total_reclaimable_bytes,
+                total_duplicate_bytes,
                 hard_link_savings_bytes: dup_output.summary.hard_link_aliases_count,
             },
         };
