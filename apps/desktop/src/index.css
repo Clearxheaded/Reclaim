@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Surface Foundations (Dark Mode Default) */
+  --bg-canvas: #0b0c0e;
+  --bg-surface: #121417;
+  --bg-elevated: #1a1d22;
+  --bg-subtle: #22262c;
+
+  /* Borders & Dividers */
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-muted: rgba(255, 255, 255, 0.12);
+  --border-active: rgba(255, 255, 255, 0.24);
+
+  /* Typography Colors */
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-tertiary: #6b7280;
+  --text-monospace: #e2e8f0;
+
+  /* Semantic State Colors */
+  /* Emerald: Verified Safety / Identical Hash Match / Successful Move */
+  --color-safe-bg: rgba(16, 185, 129, 0.12);
+  --color-safe-border: rgba(16, 185, 129, 0.35);
+  --color-safe-text: #34d399;
+
+  /* Sky / Indigo: Protected Keeper File Badge */
+  --color-keeper-bg: rgba(56, 189, 248, 0.12);
+  --color-keeper-border: rgba(56, 189, 248, 0.35);
+  --color-keeper-text: #38bdf8;
+
+  /* Amber: Proposed Quarantine / Review / TOCTOU Warning */
+  --color-warning-bg: rgba(245, 158, 11, 0.12);
+  --color-warning-border: rgba(245, 158, 11, 0.35);
+  --color-warning-text: #fbbf24;
+
+  /* Crimson: Conflict / Failure / Missing File */
+  --color-danger-bg: rgba(239, 68, 68, 0.12);
+  --color-danger-border: rgba(239, 68, 68, 0.35);
+  --color-danger-text: #f87171;
+
+  /* Slate: Hard-link Alias / Skipped Symlink / Inert */
+  --color-alias-bg: rgba(148, 163, 184, 0.10);
+  --color-alias-border: rgba(148, 163, 184, 0.25);
+  --color-alias-text: #94a3b8;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+

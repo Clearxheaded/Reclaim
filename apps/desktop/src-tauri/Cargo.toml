@@ -1,0 +1,30 @@
+[package]
+name = "reclaim-desktop"
+version = "0.1.0"
+description = "Safe, reviewable desktop filesystem cleanup"
+authors = ["Reclaim Contributors"]
+edition = "2021"
+
+[lib]
+name = "reclaim_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.38", features = ["sync", "rt", "macros"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+blake3 = "1.5"
+reclaim-core = { path = "../../../crates/reclaim-core" }
+reclaim-storage = { path = "../../../crates/reclaim-storage" }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+

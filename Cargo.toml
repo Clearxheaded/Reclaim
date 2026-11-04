@@ -3,5 +3,6 @@ members = [
     "crates/reclaim-core",
     "crates/reclaim-storage",
     "crates/reclaim-cli",
+    "apps/desktop/src-tauri",
 ]
 resolver = "2"
