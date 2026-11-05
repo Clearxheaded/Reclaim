@@ -27,6 +27,7 @@ use crate::types::{ActionId, ActionState, PlanDetails, PlanId, SessionId};
 use reclaim_core::mutation::{atomic_move_no_replace, validate_action_preconditions};
 use reclaim_core::planner::{CleanupPlan, QuarantineAction};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -48,6 +49,16 @@ pub enum ActionExecutionStatus {
     Failed { reason: String },
     /// The action was skipped (e.g. already in terminal state, or halted early).
     Skipped { reason: String },
+}
+
+impl fmt::Display for ActionExecutionStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ActionExecutionStatus::Completed => write!(f, "Completed"),
+            ActionExecutionStatus::Failed { reason } => write!(f, "Failed: {}", reason),
+            ActionExecutionStatus::Skipped { reason } => write!(f, "Skipped: {}", reason),
+        }
+    }
 }
 
 /// Detailed result of executing an individual quarantine action.
