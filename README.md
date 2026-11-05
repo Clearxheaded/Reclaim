@@ -5,12 +5,12 @@
 
   **A modern, cross-platform desktop application and CLI tool for finding duplicate files and performing safe, reviewable, recoverable filesystem cleanup.**
 
-  [![CI](https://github.com/reclaim-app/reclaim/actions/workflows/ci.yml/badge.svg)](https://github.com/reclaim-app/reclaim/actions/workflows/ci.yml)
-  [![Release Packaging](https://github.com/reclaim-app/reclaim/actions/workflows/release.yml/badge.svg)](https://github.com/reclaim-app/reclaim/actions/workflows/release.yml)
+  [![CI](https://github.com/Clearxheaded/Reclaim/actions/workflows/ci.yml/badge.svg)](https://github.com/Clearxheaded/Reclaim/actions/workflows/ci.yml)
+  [![Release Packaging](https://github.com/Clearxheaded/Reclaim/actions/workflows/release.yml/badge.svg)](https://github.com/Clearxheaded/Reclaim/actions/workflows/release.yml)
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
   [![Rust 1.80+](https://img.shields.io/badge/Rust-1.80%2B-orange.svg)](https://www.rust-lang.org)
   [![Tauri 2](https://img.shields.io/badge/Tauri-v2-24C8DB.svg)](https://tauri.app)
-  [![Tests Passing](https://img.shields.io/badge/Tests-100%2F100_Passed-10b981.svg)](https://github.com/reclaim-app/reclaim)
+  [![Tests Passing](https://img.shields.io/badge/Tests-100%2F100_Passed-10b981.svg)](https://github.com/Clearxheaded/Reclaim)
 
   [Features](#key-features) • [Safety Invariants](#the-10-filesystem-safety-invariants) • [Architecture](#architectural-layers) • [Installation](#installation--quick-start) • [Test Suite](#verification--test-suite)
 </div>
@@ -87,7 +87,7 @@ Reclaim strictly separates concerns into 6 decoupled architectural layers:
 ## Installation & Quick Start
 
 ### 1. Desktop Application
-Download the latest native release for your platform from [Releases](https://github.com/reclaim-app/reclaim/releases):
+Download the latest native release for your platform from [Releases](https://github.com/Clearxheaded/Reclaim/releases):
 - **macOS**: Drag `Reclaim.app` into `/Applications`.
 - **Windows**: Run `Reclaim-Setup.exe` or `Reclaim.msi`.
 

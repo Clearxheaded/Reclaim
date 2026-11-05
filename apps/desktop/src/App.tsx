@@ -210,6 +210,9 @@ export const App: React.FC = () => {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <DuplicateInspector
                   groups={duplicateOutput.groups}
+                  summary={duplicateOutput.summary}
+                  totalScannedBytes={scanProgress?.bytes_scanned}
+                  totalScannedFiles={scanProgress?.files_scanned}
                   keeperOverrides={keeperOverrides}
                   onSetKeeper={handleSetKeeper}
                 />

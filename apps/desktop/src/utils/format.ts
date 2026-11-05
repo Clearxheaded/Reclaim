@@ -49,3 +49,32 @@ export function getParentDir(path: string): string {
   return parts.join('/');
 }
 
+export function getFileExtension(path: string): string {
+  const basename = getBasename(path);
+  const dotIndex = basename.lastIndexOf('.');
+  if (dotIndex === -1 || dotIndex === 0) return '';
+  return basename.substring(dotIndex + 1).toLowerCase();
+}
+
+export function formatNumber(num: number): string {
+  return new Intl.NumberFormat().format(num);
+}
+
+export function compareTimestamps(timeA?: number, timeB?: number): string {
+  if (timeA === undefined || timeB === undefined) return 'Unknown timestamp';
+  const diffSec = timeA - timeB;
+  if (Math.abs(diffSec) < 2) return 'Identical modification timestamp';
+  if (diffSec > 0) {
+    if (diffSec < 60) return `${diffSec}s newer`;
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m newer`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h newer`;
+    return `${Math.floor(diffSec / 86400)}d newer`;
+  } else {
+    const absDiff = Math.abs(diffSec);
+    if (absDiff < 60) return `${absDiff}s older`;
+    if (absDiff < 3600) return `${Math.floor(absDiff / 60)}m older`;
+    if (absDiff < 86400) return `${Math.floor(absDiff / 3600)}h older`;
+    return `${Math.floor(absDiff / 86400)}d older`;
+  }
+}
+
