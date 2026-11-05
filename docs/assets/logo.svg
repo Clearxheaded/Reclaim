@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f1218" />
+      <stop offset="100%" stop-color="#07080b" />
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="rGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e2e8f0" />
+    </linearGradient>
+  </defs>
+
+  <!-- Squircle Canvas Tile -->
+  <rect x="20" y="20" width="472" height="472" rx="108" fill="url(#bgGrad)" stroke="#1e2430" stroke-width="2" />
+
+  <!-- Ghost / Duplicate Document (Background Layer, dashed outline) -->
+  <rect x="135" y="105" width="185" height="245" rx="18" fill="#131720" stroke="#2a3447" stroke-width="3" stroke-dasharray="6 6" opacity="0.65" />
+
+  <!-- Keeper Document (Foreground Staging Layer) -->
+  <rect x="180" y="145" width="195" height="255" rx="18" fill="#0d1117" stroke="#1f293d" stroke-width="3" />
+
+  <!-- Tiny Folded Dog-Ear on Keeper File (Top-Right) -->
+  <path d="M 345 145 L 375 175 L 345 175 Z" fill="#1e293b" />
+  <path d="M 345 145 L 345 175 L 375 175" fill="none" stroke="#2a3447" stroke-width="2" />
+
+  <!-- The Distinct Capital 'R' -->
+  <!-- 1. Vertical Spine -->
+  <rect x="218" y="195" width="22" height="155" rx="6" fill="url(#rGrad)" />
+
+  <!-- 2. Upper Bowl / Loop -->
+  <path d="M 235 195 
+           L 282 195 
+           C 316 195, 316 265, 282 265 
+           L 235 265 Z
+           M 240 215 
+           L 278 215 
+           C 296 215, 296 245, 278 245 
+           L 240 245 Z" 
+        fill="url(#rGrad)" />
+
+  <!-- 3. Confident Diagonal Leg in Radiant Emerald -->
+  <path d="M 268 258 
+           L 308 344 
+           C 310 348, 314 350, 318 350
+           C 326 350, 331 343, 328 336
+           L 286 250 Z" 
+        fill="url(#emeraldGrad)" />
+
+  <!-- Emerald Verification Node at the Leg Terminal -->
+  <circle cx="318" cy="344" r="5" fill="#34d399" />
+</svg>
