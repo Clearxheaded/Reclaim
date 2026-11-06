@@ -31,6 +31,13 @@ use std::fs::{self, File};
 use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 
+pub mod cow;
+pub use cow::{
+    deduplicate_via_cow, default_cow_deduplicator, ApfsCloneDeduplicator, CowDeduplicationResult,
+    CowError, CowStrategy, ExtentDeduplicator, LinuxFicloneDeduplicator, SyntheticCowDeduplicator,
+    WindowsBlockCloneDeduplicator,
+};
+
 /// 64 KB buffer size for streaming cryptographic BLAKE3 hashing during precondition verification.
 const HASH_BUFFER_SIZE: usize = 64 * 1024;
 

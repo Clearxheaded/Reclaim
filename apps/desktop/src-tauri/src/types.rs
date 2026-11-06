@@ -56,6 +56,16 @@ pub struct DuplicateSummaryDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CowDeduplicationResultDto {
+    pub source: String,
+    pub target: String,
+    pub bytes_reclaimed: u64,
+    pub strategy: String,
+    pub verified_hash: String,
+    pub already_shared: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DuplicateOutputDto {
     pub groups: Vec<DuplicateGroupDto>,
     pub summary: DuplicateSummaryDto,

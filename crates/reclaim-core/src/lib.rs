@@ -19,6 +19,7 @@ pub mod mutation;
 pub mod planner;
 pub mod platform;
 pub mod scanner;
+pub mod watcher;
 
 // Convenient re-exports for library consumers
 pub use duplicates::{
@@ -30,8 +31,11 @@ pub use entry::{FileEntry, SkipReason, SkippedEntry};
 pub use error::{RootScanError, ScanError, ScanErrorKind};
 pub use file_id::FileId;
 pub use mutation::{
-    atomic_move_no_replace, compute_file_blake3_hash, validate_action_preconditions,
-    verify_same_filesystem, MutationError, PreconditionError,
+    atomic_move_no_replace, compute_file_blake3_hash, deduplicate_via_cow,
+    default_cow_deduplicator, validate_action_preconditions, verify_same_filesystem,
+    ApfsCloneDeduplicator, CowDeduplicationResult, CowError, CowStrategy, ExtentDeduplicator,
+    LinuxFicloneDeduplicator, MutationError, PreconditionError, SyntheticCowDeduplicator,
+    WindowsBlockCloneDeduplicator,
 };
 pub use planner::{
     generate_plan, ActionPreconditions, CleanupPlan, KeeperPolicy, PlanError, PlanOptions,
@@ -40,4 +44,8 @@ pub use planner::{
 pub use scanner::{
     scan_directory, CancellationToken, ProgressCallback, ScanOptions, ScanOutput, ScanProgress,
     ScanSummary,
+};
+pub use watcher::{
+    ActiveFsWatcher, CandidateInvalidator, FsChangeEvent, InvalidationNotice, InvalidationReason,
+    WatcherError,
 };

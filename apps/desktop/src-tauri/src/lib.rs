@@ -17,7 +17,9 @@ pub fn run() {
             commands::undo_session,
             commands::get_session_history,
             commands::recover_journal,
-            commands::reveal_in_file_manager
+            commands::reveal_in_file_manager,
+            commands::check_cow_support,
+            commands::execute_cow_deduplication
         ])
         .run(tauri::generate_context!())
         .expect("error while running reclaim desktop application");

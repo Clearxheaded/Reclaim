@@ -17,12 +17,14 @@ use tauri::{Emitter, State, Window};
 
 pub struct AppState {
     pub cancel_token: Mutex<Arc<CancellationToken>>,
+    pub active_watcher: Arc<Mutex<Option<reclaim_core::ActiveFsWatcher>>>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             cancel_token: Mutex::new(Arc::new(CancellationToken::new())),
+            active_watcher: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -51,7 +53,7 @@ pub async fn scan_and_find_duplicates(
     let win_scan = window.clone();
     let win_dup = window.clone();
 
-    tokio::task::spawn_blocking(move || {
+    let (output_dto, raw_dup_output) = tokio::task::spawn_blocking(move || {
         // Step 1: Scan directory
         let scan_cb = Box::new(move |p: &reclaim_core::ScanProgress| {
             let _ = win_scan.emit(
@@ -128,12 +130,12 @@ pub async fn scan_and_find_duplicates(
         // Convert domain groups to DTOs
         let groups = dup_output
             .groups
-            .into_iter()
+            .iter()
             .map(|g| {
                 let file_count = g.file_count();
                 let physical_copies = g
                     .physical_copies
-                    .into_iter()
+                    .iter()
                     .map(|pc| {
                         let primary = pc
                             .paths
@@ -147,7 +149,7 @@ pub async fn scan_and_find_duplicates(
                             primary_path: primary,
                             all_paths: pc
                                 .paths
-                                .into_iter()
+                                .iter()
                                 .map(|p| p.to_string_lossy().to_string())
                                 .collect(),
                         }
@@ -165,7 +167,7 @@ pub async fn scan_and_find_duplicates(
             })
             .collect();
 
-        Ok(DuplicateOutputDto {
+        let dto = DuplicateOutputDto {
             groups,
             summary: DuplicateSummaryDto {
                 total_files_scanned: dup_output.summary.total_files_evaluated,
@@ -174,10 +176,45 @@ pub async fn scan_and_find_duplicates(
                 reclaimable_bytes: dup_output.summary.total_reclaimable_bytes,
                 hard_link_savings_bytes: dup_output.summary.hard_link_aliases_count,
             },
-        })
+        };
+
+        Ok((dto, dup_output))
     })
     .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    .map_err(|e| format!("Task join error: {}", e))??;
+
+    // Active TOCTOU Defense: Stream OS filesystem events on the scanned root directory
+    let watcher_slot = state.active_watcher.clone();
+    if let Ok(watcher) =
+        reclaim_core::ActiveFsWatcher::start(raw_dup_output, vec![PathBuf::from(&root_path)])
+    {
+        if let Ok(mut lock) = watcher_slot.lock() {
+            *lock = Some(watcher);
+        }
+        let win_events = window.clone();
+        let watcher_ref = watcher_slot.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                let notices = {
+                    if let Ok(guard) = watcher_ref.lock() {
+                        if let Some(ref w) = *guard {
+                            w.poll_invalidations()
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                };
+                for notice in notices {
+                    let _ = win_events.emit("reclaim://candidate-invalidated", &notice);
+                }
+            }
+        });
+    }
+
+    Ok(output_dto)
 }
 
 // ----------------------------------------------------------------------------
@@ -825,4 +862,42 @@ pub fn reveal_in_file_manager(path: String) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+// ----------------------------------------------------------------------------
+// Command 9: Check whether target filesystem supports CoW extent deduplication
+// ----------------------------------------------------------------------------
+#[tauri::command]
+pub async fn check_cow_support(path: String) -> Result<bool, String> {
+    let p = PathBuf::from(&path);
+    let deduplicator = reclaim_core::default_cow_deduplicator();
+    Ok(deduplicator.is_supported(&p))
+}
+
+// ----------------------------------------------------------------------------
+// Command 10: Execute zero-movement Copy-on-Write extent deduplication
+// ----------------------------------------------------------------------------
+#[tauri::command]
+pub async fn execute_cow_deduplication(
+    source_path: String,
+    target_path: String,
+) -> Result<CowDeduplicationResultDto, String> {
+    let src = PathBuf::from(&source_path);
+    let tgt = PathBuf::from(&target_path);
+
+    tokio::task::spawn_blocking(move || {
+        let res = reclaim_core::deduplicate_via_cow(&src, &tgt)
+            .map_err(|e| format!("CoW deduplication error: {}", e))?;
+
+        Ok(CowDeduplicationResultDto {
+            source: res.source.to_string_lossy().to_string(),
+            target: res.target.to_string_lossy().to_string(),
+            bytes_reclaimed: res.bytes_reclaimed,
+            strategy: res.strategy.to_string(),
+            verified_hash: res.verified_hash,
+            already_shared: res.already_shared,
+        })
+    })
+    .await
+    .map_err(|e| format!("Task execution error: {}", e))?
 }
