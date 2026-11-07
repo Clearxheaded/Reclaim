@@ -3,54 +3,56 @@
 @tailwind utilities;
 
 :root {
-  /* Surface Foundations (Dark Mode Default) */
-  --bg-canvas: #0b0c0e;
-  --bg-surface: #121417;
-  --bg-elevated: #1a1d22;
-  --bg-subtle: #22262c;
+  /* Surface Foundations (Refined Deep Zinc / Neutral Palette) */
+  --bg-canvas: #0c0d12;
+  --bg-surface: #14161f;
+  --bg-elevated: #1b1e2b;
+  --bg-subtle: #222638;
 
-  /* Borders & Dividers */
-  --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-muted: rgba(255, 255, 255, 0.12);
-  --border-active: rgba(255, 255, 255, 0.24);
+  /* Razor-Sharp 1px Borders */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-muted: rgba(255, 255, 255, 0.10);
+  --border-active: rgba(255, 255, 255, 0.20);
 
   /* Typography Colors */
-  --text-primary: #f3f4f6;
-  --text-secondary: #9ca3af;
+  --text-primary: #f4f5f7;
+  --text-secondary: #9da3af;
   --text-tertiary: #6b7280;
   --text-monospace: #e2e8f0;
 
   /* Semantic State Colors */
-  /* Emerald: Verified Safety / Identical Hash Match / Successful Move */
-  --color-safe-bg: rgba(16, 185, 129, 0.12);
-  --color-safe-border: rgba(16, 185, 129, 0.35);
+  --color-safe-bg: rgba(16, 185, 129, 0.10);
+  --color-safe-border: rgba(16, 185, 129, 0.28);
   --color-safe-text: #34d399;
 
-  /* Sky / Indigo: Protected Keeper File Badge */
-  --color-keeper-bg: rgba(56, 189, 248, 0.12);
-  --color-keeper-border: rgba(56, 189, 248, 0.35);
+  --color-keeper-bg: rgba(56, 189, 248, 0.10);
+  --color-keeper-border: rgba(56, 189, 248, 0.28);
   --color-keeper-text: #38bdf8;
 
-  /* Amber: Proposed Quarantine / Review / TOCTOU Warning */
-  --color-warning-bg: rgba(245, 158, 11, 0.12);
-  --color-warning-border: rgba(245, 158, 11, 0.35);
+  --color-warning-bg: rgba(245, 158, 11, 0.10);
+  --color-warning-border: rgba(245, 158, 11, 0.28);
   --color-warning-text: #fbbf24;
 
-  /* Crimson: Conflict / Failure / Missing File */
-  --color-danger-bg: rgba(239, 68, 68, 0.12);
-  --color-danger-border: rgba(239, 68, 68, 0.35);
-  --color-danger-text: #f87171;
+  --color-danger-bg: rgba(244, 63, 94, 0.10);
+  --color-danger-border: rgba(244, 63, 94, 0.28);
+  --color-danger-text: #fb7185;
 
-  /* Slate: Hard-link Alias / Skipped Symlink / Inert */
-  --color-alias-bg: rgba(148, 163, 184, 0.10);
-  --color-alias-border: rgba(148, 163, 184, 0.25);
+  --color-alias-bg: rgba(148, 163, 184, 0.08);
+  --color-alias-border: rgba(148, 163, 184, 0.20);
   --color-alias-text: #94a3b8;
 }
 
-/* Custom Scrollbars */
+/* Enforce strict tabular figures for all data tables & monospace elements */
+.font-mono,
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Custom Minimalist Scrollbars (Linear / Transmit style) */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -58,11 +60,23 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.22);
 }
+
+/* DaisyDisk / Reflink Pattern for 0 B Physical Hard Links */
+.bg-hardlink-dashed {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(148, 163, 184, 0.35),
+    rgba(148, 163, 184, 0.35) 2px,
+    transparent 2px,
+    transparent 6px
+  );
+}
+
 

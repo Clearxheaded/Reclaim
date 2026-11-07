@@ -76,10 +76,10 @@ export const SafetyInvariantsModal: React.FC = () => {
   ];
 
   return (
-    <div className="flex-1 flex flex-col p-6 overflow-y-auto bg-canvas">
-      <div className="max-w-4xl w-full mx-auto space-y-6">
+    <div className="flex-1 flex flex-col p-6 overflow-y-auto bg-canvas select-none">
+      <div className="max-w-4xl w-full mx-auto space-y-5">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium mb-2">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium mb-2">
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>Core Engineering Standard</span>
           </div>
@@ -92,24 +92,24 @@ export const SafetyInvariantsModal: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {invariants.map((inv) => {
             const Icon = inv.icon;
             return (
               <div
                 key={inv.num}
-                className="p-4 rounded-xl bg-surface border border-border-subtle hover:border-border-muted transition-colors space-y-2"
+                className="p-3.5 rounded bg-surface border border-white/5 hover:border-white/10 transition-colors space-y-1.5"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-subtle border border-border-subtle flex items-center justify-center text-emerald-400 shrink-0">
-                    <Icon className="w-4 h-4" />
+                  <div className="w-6 h-6 rounded bg-elevated border border-white/5 flex items-center justify-center text-emerald-400 shrink-0">
+                    <Icon className="w-3.5 h-3.5" />
                   </div>
                   <div className="text-xs font-semibold text-gray-200">
-                    <span className="text-emerald-400 font-mono mr-1.5">#{inv.num}</span>
+                    <span className="text-emerald-400 font-mono tabular-nums mr-1.5">#{inv.num}</span>
                     {inv.title}
                   </div>
                 </div>
-                <p className="text-[11px] text-gray-400 leading-relaxed pl-9">
+                <p className="text-[11px] text-gray-400 leading-relaxed pl-8">
                   {inv.desc}
                 </p>
               </div>
@@ -120,4 +120,3 @@ export const SafetyInvariantsModal: React.FC = () => {
     </div>
   );
 };
-

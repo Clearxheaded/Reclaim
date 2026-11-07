@@ -10,32 +10,32 @@ interface ConflictModalProps {
 
 export const ConflictModal: React.FC<ConflictModalProps> = ({ conflicts, onClose }) => {
   return (
-    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-surface border border-red-500/30 rounded-xl max-w-xl w-full shadow-2xl flex flex-col max-h-[80vh] overflow-hidden">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 select-none">
+      <div className="bg-surface border border-rose-500/30 rounded-lg max-w-xl w-full shadow-2xl flex flex-col max-h-[80vh] overflow-hidden">
         {/* Header */}
-        <div className="p-4 border-b border-border-subtle flex items-center justify-between bg-red-500/10">
+        <div className="p-3.5 border-b border-border-subtle flex items-center justify-between bg-rose-500/10">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center">
-              <AlertOctagon className="w-5 h-5" />
+            <div className="w-7 h-7 rounded bg-rose-500/20 text-rose-400 flex items-center justify-center">
+              <AlertOctagon className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-white">Undo Refused: Destination Conflict</h3>
-              <p className="text-[11px] text-gray-400">Reclaim will never silently overwrite user files</p>
+              <h3 className="text-xs font-semibold text-white">Undo Refused: Destination Conflict</h3>
+              <p className="text-[10px] text-gray-400">Reclaim will never silently overwrite user files</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded text-gray-400 hover:text-white hover:bg-subtle"
+            className="p-1 rounded text-gray-400 hover:text-white hover:bg-elevated transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Conflict Explanations */}
-        <div className="p-5 space-y-4 overflow-y-auto text-xs">
-          <div className="p-3 rounded-lg bg-canvas border border-border-subtle text-gray-300 space-y-2">
-            <div className="font-semibold text-red-400 flex items-center gap-1.5">
-              <ShieldAlert className="w-4 h-4" />
+        <div className="p-4 space-y-3.5 overflow-y-auto text-xs">
+          <div className="p-3 rounded bg-canvas border border-white/5 text-gray-300 space-y-1.5">
+            <div className="font-semibold text-rose-400 flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5" />
               <span>Core Safety Invariant: No Silent Overwrites</span>
             </div>
             <p className="text-[11px] text-gray-400 leading-relaxed">
@@ -45,31 +45,31 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({ conflicts, onClose
             </p>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <span className="text-xs font-semibold text-gray-300">
               Conflicted Actions ({conflicts.length}):
             </span>
-            <div className="border border-border-subtle rounded-lg divide-y divide-border-subtle bg-canvas/40">
+            <div className="border border-white/5 rounded divide-y divide-white/5 bg-canvas/40">
               {conflicts.map((c) => (
-                <div key={c.action_id} className="p-3 space-y-2 font-mono text-[11px]">
+                <div key={c.action_id} className="p-2.5 space-y-1.5 font-mono text-[11px] tabular-nums">
                   <div>
-                    <span className="text-red-400 font-semibold block mb-0.5">
+                    <span className="text-rose-400 font-semibold block mb-0.5">
                       Reason: {c.reason}
                     </span>
                     <span className="text-gray-300 break-all">{c.message}</span>
                   </div>
 
-                  <div className="p-2 rounded bg-elevated border border-border-subtle text-[10px] space-y-1">
+                  <div className="p-2 rounded bg-elevated/70 border border-white/5 text-[10px] space-y-0.5">
                     <div className="text-gray-500">Destination Path (Occupied):</div>
                     <div className="text-gray-200 break-all">{c.source_path}</div>
                     <div className="text-gray-500 mt-1">Preserved in Quarantine:</div>
                     <div className="text-amber-400 break-all">{c.quarantine_path}</div>
                   </div>
 
-                  <div className="flex justify-end gap-2 pt-1">
+                  <div className="flex justify-end gap-2 pt-0.5">
                     <button
                       onClick={() => revealInFileManager(c.quarantine_path)}
-                      className="px-2 py-1 rounded bg-subtle hover:bg-elevated text-gray-300 text-[10px] transition-colors"
+                      className="px-2 py-1 rounded bg-elevated hover:bg-subtle text-gray-300 text-[10px] transition-colors border border-white/5"
                     >
                       Inspect in Quarantine
                     </button>
@@ -81,10 +81,10 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({ conflicts, onClose
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-border-subtle bg-canvas/40 flex justify-end">
+        <div className="p-3 border-t border-border-subtle bg-elevated/40 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-subtle hover:bg-elevated text-white text-xs font-medium transition-colors"
+            className="px-3.5 py-1.5 rounded bg-elevated hover:bg-subtle text-white text-xs font-medium transition-colors border border-white/10"
           >
             Acknowledge & Close
           </button>
@@ -93,4 +93,3 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({ conflicts, onClose
     </div>
   );
 };
-

@@ -97,23 +97,23 @@ export const QuickLookModal: React.FC<QuickLookModalProps> = ({
       case 'gif':
       case 'webp':
       case 'svg':
-        return <FileImage className="w-12 h-12 text-pink-400" />;
+        return <FileImage className="w-10 h-10 text-pink-400" />;
       case 'mp4':
       case 'mov':
       case 'mkv':
       case 'avi':
-        return <FileVideo className="w-12 h-12 text-violet-400" />;
+        return <FileVideo className="w-10 h-10 text-blue-400" />;
       case 'mp3':
       case 'wav':
       case 'flac':
       case 'aac':
-        return <FileAudio className="w-12 h-12 text-cyan-400" />;
+        return <FileAudio className="w-10 h-10 text-teal-400" />;
       case 'zip':
       case 'tar':
       case 'gz':
       case '7z':
       case 'dmg':
-        return <FileArchive className="w-12 h-12 text-amber-400" />;
+        return <FileArchive className="w-10 h-10 text-amber-400" />;
       case 'rs':
       case 'ts':
       case 'tsx':
@@ -122,128 +122,128 @@ export const QuickLookModal: React.FC<QuickLookModalProps> = ({
       case 'py':
       case 'html':
       case 'css':
-        return <FileCode className="w-12 h-12 text-emerald-400" />;
+        return <FileCode className="w-10 h-10 text-emerald-400" />;
       case 'pdf':
       case 'txt':
       case 'md':
       case 'doc':
       case 'docx':
-        return <FileText className="w-12 h-12 text-blue-400" />;
+        return <FileText className="w-10 h-10 text-sky-400" />;
       default:
-        return <File className="w-12 h-12 text-gray-400" />;
+        return <File className="w-10 h-10 text-gray-400" />;
     }
   };
 
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-150 select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl bg-surface border border-border-muted rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-2xl bg-surface border border-white/10 rounded-lg shadow-2xl overflow-hidden flex flex-col"
       >
         {/* Title Bar */}
-        <div className="p-3.5 border-b border-border-subtle bg-elevated flex items-center justify-between">
+        <div className="p-3 border-b border-border-subtle bg-elevated/40 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-subtle text-gray-300 border border-border-subtle uppercase">
+            <span className="text-[10px] tabular-nums font-mono px-1.5 py-0.5 rounded bg-elevated text-gray-300 border border-white/5 uppercase">
               Quick Look Preview
             </span>
-            <span className="text-xs font-semibold text-gray-300">
+            <span className="text-xs font-semibold text-gray-200">
               {basename}
             </span>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-subtle transition-colors"
+            className="p-1 rounded text-gray-400 hover:text-white hover:bg-elevated transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content Area */}
-        <div className="p-6 space-y-6">
+        <div className="p-5 space-y-4">
           {/* File Hero Section */}
-          <div className="flex items-center gap-5 p-4 rounded-xl bg-canvas border border-border-subtle">
-            <div className="p-3 rounded-lg bg-elevated border border-border-subtle">
+          <div className="flex items-center gap-4 p-3.5 rounded-lg bg-canvas border border-white/5">
+            <div className="p-2.5 rounded bg-elevated border border-white/5">
               {getFileIcon(ext)}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-semibold text-white truncate">
+                <h2 className="text-sm font-semibold text-white truncate">
                   {basename}
                 </h2>
                 {isKeeper ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/30">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/25">
                     <ShieldCheck className="w-3 h-3" />
-                    PROTECTED KEEPER
+                    KEEPER
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/25">
                     <AlertCircle className="w-3 h-3" />
                     QUARANTINE CANDIDATE
                   </span>
                 )}
               </div>
-              <p className="font-mono text-xs text-gray-400 truncate mt-1" title={filePath}>
+              <p className="font-mono text-[11px] text-gray-500 truncate mt-1" title={filePath}>
                 {parentDir}
               </p>
             </div>
           </div>
 
           {/* Metadata Grid */}
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="p-3 rounded-lg bg-elevated/70 border border-border-subtle space-y-1">
-              <span className="text-[10px] uppercase font-semibold text-gray-400">
+          <div className="grid grid-cols-2 gap-2.5 text-xs">
+            <div className="p-2.5 rounded bg-elevated/70 border border-white/5 space-y-0.5">
+              <span className="text-[10px] uppercase font-semibold text-gray-500">
                 Exact File Size
               </span>
-              <div className="text-sm font-mono font-bold text-gray-200">
+              <div className="text-xs tabular-nums font-mono font-bold text-gray-200">
                 {formatBytes(size)}
               </div>
-              <div className="text-[10px] font-mono text-gray-400">
+              <div className="text-[10px] tabular-nums font-mono text-gray-500">
                 {size.toLocaleString()} bytes
               </div>
             </div>
 
-            <div className="p-3 rounded-lg bg-elevated/70 border border-border-subtle space-y-1">
-              <span className="text-[10px] uppercase font-semibold text-gray-400 flex items-center gap-1">
+            <div className="p-2.5 rounded bg-elevated/70 border border-white/5 space-y-0.5">
+              <span className="text-[10px] uppercase font-semibold text-gray-500 flex items-center gap-1">
                 <Calendar className="w-3 h-3" /> Last Modified
               </span>
-              <div className="text-sm font-mono text-gray-200 truncate">
+              <div className="text-xs tabular-nums font-mono text-gray-200 truncate">
                 {modified ? formatDate(modified) : 'Unknown'}
               </div>
-              <div className="text-[10px] font-mono text-gray-400">
-                Unix timestamp: {modified ?? 'N/A'}
+              <div className="text-[10px] tabular-nums font-mono text-gray-500">
+                Unix: {modified ?? 'N/A'}
               </div>
             </div>
 
-            <div className="p-3 rounded-lg bg-elevated/70 border border-border-subtle space-y-1">
-              <span className="text-[10px] uppercase font-semibold text-gray-400">
+            <div className="p-2.5 rounded bg-elevated/70 border border-white/5 space-y-0.5">
+              <span className="text-[10px] uppercase font-semibold text-gray-500">
                 Filesystem Inode
               </span>
-              <div className="text-sm font-mono text-gray-200">
+              <div className="text-xs tabular-nums font-mono text-gray-200">
                 {inode ?? 'N/A'}
               </div>
-              <div className="text-[10px] font-mono text-gray-400">
+              <div className="text-[10px] tabular-nums font-mono text-gray-500">
                 Physical file record ID
               </div>
             </div>
 
-            <div className="p-3 rounded-lg bg-elevated/70 border border-border-subtle space-y-1">
-              <span className="text-[10px] uppercase font-semibold text-gray-400">
+            <div className="p-2.5 rounded bg-elevated/70 border border-white/5 space-y-0.5">
+              <span className="text-[10px] uppercase font-semibold text-gray-500">
                 Device / Volume ID
               </span>
-              <div className="text-sm font-mono text-gray-200">
+              <div className="text-xs tabular-nums font-mono text-gray-200">
                 {deviceId ?? 'N/A'}
               </div>
-              <div className="text-[10px] font-mono text-gray-400">
-                Hardware storage boundary
+              <div className="text-[10px] tabular-nums font-mono text-gray-500">
+                Hardware storage volume
               </div>
             </div>
           </div>
 
           {/* BLAKE3 Content Hash Card */}
-          <div className="p-3.5 rounded-lg bg-elevated border border-border-subtle space-y-2">
+          <div className="p-3 rounded bg-elevated/70 border border-white/5 space-y-1.5">
             <div className="flex items-center justify-between text-xs font-medium text-gray-300">
               <span className="flex items-center gap-1.5">
                 <Hash className="w-3.5 h-3.5 text-sky-400" />
@@ -251,7 +251,7 @@ export const QuickLookModal: React.FC<QuickLookModalProps> = ({
               </span>
               <button
                 onClick={handleCopyHash}
-                className="text-[11px] text-sky-400 hover:text-sky-300 flex items-center gap-1 transition-colors"
+                className="text-[10px] text-sky-400 hover:text-sky-300 flex items-center gap-1 transition-colors"
               >
                 {copiedHash ? (
                   <>
@@ -264,7 +264,7 @@ export const QuickLookModal: React.FC<QuickLookModalProps> = ({
                 )}
               </button>
             </div>
-            <div className="p-2 rounded bg-canvas border border-border-subtle font-mono text-[11px] text-gray-300 break-all leading-relaxed select-all">
+            <div className="p-2 rounded bg-canvas border border-white/5 font-mono text-[11px] tabular-nums text-gray-300 break-all leading-relaxed select-all">
               {blake3Hash}
             </div>
             <div className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
@@ -275,25 +275,21 @@ export const QuickLookModal: React.FC<QuickLookModalProps> = ({
         </div>
 
         {/* Footer Actions & Shortcut Hints */}
-        <div className="p-3 border-t border-border-subtle bg-elevated flex items-center justify-between text-xs">
-          <div className="flex items-center gap-3 text-[11px] text-gray-400">
+        <div className="p-3 border-t border-border-subtle bg-elevated/40 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2.5 text-[10px] tabular-nums font-mono text-gray-500">
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-subtle border border-border-muted font-mono text-[10px] text-gray-300">
-                Space
-              </kbd>
-              <span>Close</span>
+              <kbd className="px-1 py-0.5 rounded bg-elevated border border-white/5 text-gray-300">Space</kbd>
+              <span>close</span>
             </span>
+            <span>•</span>
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-subtle border border-border-muted font-mono text-[10px] text-gray-300">
-                Enter
-              </kbd>
-              <span>Set Keeper</span>
+              <kbd className="px-1 py-0.5 rounded bg-elevated border border-white/5 text-gray-300">Enter</kbd>
+              <span>set keeper</span>
             </span>
+            <span>•</span>
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-subtle border border-border-muted font-mono text-[10px] text-gray-300">
-                j/k
-              </kbd>
-              <span>Next/Prev</span>
+              <kbd className="px-1 py-0.5 rounded bg-elevated border border-white/5 text-gray-300">j/k</kbd>
+              <span>nav</span>
             </span>
           </div>
 
@@ -301,7 +297,7 @@ export const QuickLookModal: React.FC<QuickLookModalProps> = ({
             {!isKeeper && onSetAsKeeper && (
               <button
                 onClick={onSetAsKeeper}
-                className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+                className="px-3 py-1.5 rounded bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>Promote to Keeper</span>
@@ -309,7 +305,7 @@ export const QuickLookModal: React.FC<QuickLookModalProps> = ({
             )}
             <button
               onClick={() => revealInFileManager(filePath)}
-              className="px-3 py-1.5 rounded-lg bg-subtle hover:bg-elevated text-gray-200 hover:text-white border border-border-subtle text-xs font-medium flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 rounded bg-elevated hover:bg-subtle text-gray-300 hover:text-white border border-white/5 text-xs font-medium flex items-center gap-1.5 transition-colors"
             >
               <FolderOpen className="w-3.5 h-3.5" />
               <span>Reveal in File Manager</span>
@@ -320,4 +316,3 @@ export const QuickLookModal: React.FC<QuickLookModalProps> = ({
     </div>
   );
 };
-
