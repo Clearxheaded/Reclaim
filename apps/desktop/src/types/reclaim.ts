@@ -198,5 +198,24 @@ export interface RecoveryReportPayload {
   corrupt_or_missing_count: number;
 }
 
+export interface CowDeduplicationResult {
+  source: string;
+  target: string;
+  bytes_reclaimed: number;
+  strategy: string;
+  verified_hash: string;
+  already_shared: boolean;
+}
+
+export type InvalidationReason = 'Modified' | 'Removed' | 'Renamed';
+
+export interface CandidateInvalidatedEvent {
+  path: string;
+  reason: InvalidationReason;
+  group_hash: string;
+  remaining_files_in_group: number;
+  new_reclaimable_bytes: number;
+}
+
 export type ActiveTab = 'scan' | 'plan' | 'monitor' | 'history' | 'invariants';
 

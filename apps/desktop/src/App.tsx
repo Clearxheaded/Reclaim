@@ -213,8 +213,12 @@ export const App: React.FC = () => {
                   summary={duplicateOutput.summary}
                   totalScannedBytes={scanProgress?.bytes_scanned}
                   totalScannedFiles={scanProgress?.files_scanned}
+                  targetDir={targetDir}
                   keeperOverrides={keeperOverrides}
                   onSetKeeper={handleSetKeeper}
+                  onSummaryUpdate={(upd) => {
+                    setDuplicateOutput((prev) => (prev ? { ...prev, summary: upd } : null));
+                  }}
                 />
                 <SafetyActionBar
                   totalActions={totalProposedActions}

@@ -3,6 +3,7 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   CleanupPlanPayload,
+  CowDeduplicationResult,
   DuplicateGroupPayload,
   DuplicateOutputPayload,
   DuplicateProgressEvent,
@@ -208,6 +209,45 @@ export async function recoverJournal(journalPath?: string): Promise<RecoveryRepo
     completed_at_quarantine_count: 1,
     unmoved_at_source_count: 0,
     corrupt_or_missing_count: 0,
+  };
+}
+
+// Check whether target filesystem supports Copy-on-Write (CoW) extent deduplication
+export async function checkCowSupport(path: string): Promise<boolean> {
+  if (isTauri()) {
+    try {
+      return await invoke<boolean>('check_cow_support', { path });
+    } catch (err) {
+      console.warn('Failed to check CoW support:', err);
+      return false;
+    }
+  }
+
+  // Browser Mock: APFS/Btrfs CoW extent support is simulated as true
+  return true;
+}
+
+// Execute zero-movement Copy-on-Write extent deduplication (APFS clonefile / Linux FICLONE)
+export async function executeCowDeduplication(
+  sourcePath: string,
+  targetPath: string
+): Promise<CowDeduplicationResult> {
+  if (isTauri()) {
+    return await invoke<CowDeduplicationResult>('execute_cow_deduplication', {
+      sourcePath,
+      targetPath,
+    });
+  }
+
+  // Browser Mock: simulate successful kernel extent deduplication
+  await new Promise((r) => setTimeout(r, 120));
+  return {
+    source: sourcePath,
+    target: targetPath,
+    bytes_reclaimed: 1420584960,
+    strategy: 'MacOSClonefile (clonefile(2) + renamex_np)',
+    verified_hash: '9f82c4e207d3910c80b67812fa92c3d18201bfa8e469e35b7194f1c9447e1122',
+    already_shared: false,
   };
 }
 
