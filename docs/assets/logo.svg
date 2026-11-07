@@ -1,55 +1,87 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f1218" />
-      <stop offset="100%" stop-color="#07080b" />
+    <!-- Background Squircle Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#161924" />
+      <stop offset="100%" stop-color="#0a0b10" />
     </linearGradient>
-    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#10b981" />
-      <stop offset="100%" stop-color="#059669" />
+
+    <!-- Top Highlight Bevel -->
+    <linearGradient id="bevelGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14" />
+      <stop offset="10%" stop-color="#ffffff" stop-opacity="0.03" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
     </linearGradient>
-    <linearGradient id="rGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+
+    <!-- Titanium Stem & Bowl Gradient -->
+    <linearGradient id="titaniumGrad" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#ffffff" />
       <stop offset="100%" stop-color="#e2e8f0" />
     </linearGradient>
+
+    <!-- Emerald Reclaim Dynamic Leg Gradient -->
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+
+    <!-- Subtle Drop Shadow for Glyphs -->
+    <filter id="glyphShadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.6" />
+    </filter>
+
+    <!-- Subtle Document Shadow -->
+    <filter id="docShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
   </defs>
 
-  <!-- Squircle Canvas Tile -->
-  <rect x="20" y="20" width="472" height="472" rx="108" fill="url(#bgGrad)" stroke="#1e2430" stroke-width="2" />
+  <!-- 1. Native macOS App Squircle Foundation -->
+  <rect x="48" y="48" width="928" height="928" rx="212" fill="url(#bgGrad)" stroke="rgba(255,255,255,0.08)" stroke-width="2" />
+  
+  <!-- Subtle Top Highlight Rim -->
+  <rect x="49" y="49" width="926" height="460" rx="211" fill="url(#bevelGrad)" pointer-events="none" />
 
-  <!-- Ghost / Duplicate Document (Background Layer, dashed outline) -->
-  <rect x="135" y="105" width="185" height="245" rx="18" fill="#131720" stroke="#2a3447" stroke-width="3" stroke-dasharray="6 6" opacity="0.65" />
+  <!-- 2. Dual File Deduplication Motif (Ghost vs Keeper) -->
+  <!-- Ghost Duplicate File (Offset Back Layer with subtle dashed border) -->
+  <g transform="translate(260, 205) rotate(-6 230 300)" opacity="0.45">
+    <rect x="0" y="0" width="370" height="490" rx="36" fill="#131722" stroke="#38bdf8" stroke-width="4" stroke-dasharray="14 10" />
+  </g>
 
-  <!-- Keeper Document (Foreground Staging Layer) -->
-  <rect x="180" y="145" width="195" height="255" rx="18" fill="#0d1117" stroke="#1f293d" stroke-width="3" />
+  <!-- Primary Keeper Document (Foreground Master Layer) -->
+  <g transform="translate(325, 230)" filter="url(#docShadow)">
+    <rect x="0" y="0" width="380" height="500" rx="36" fill="#0d0e14" stroke="rgba(255,255,255,0.12)" stroke-width="3" />
+    
+    <!-- Top-Right Folded Dog-Ear Corner -->
+    <path d="M 310 0 L 380 70 L 310 70 Z" fill="#1e2230" />
+    <path d="M 310 0 L 310 70 L 380 70" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="3" />
+  </g>
 
-  <!-- Tiny Folded Dog-Ear on Keeper File (Top-Right) -->
-  <path d="M 345 145 L 375 175 L 345 175 Z" fill="#1e293b" />
-  <path d="M 345 145 L 345 175 L 375 175" fill="none" stroke="#2a3447" stroke-width="2" />
+  <!-- 3. Monolithic Geometric 'R' Glyph -->
+  <g filter="url(#glyphShadow)">
+    <!-- Vertical Spine -->
+    <rect x="400" y="340" width="48" height="300" rx="14" fill="url(#titaniumGrad)" />
 
-  <!-- The Distinct Capital 'R' -->
-  <!-- 1. Vertical Spine -->
-  <rect x="218" y="195" width="22" height="155" rx="6" fill="url(#rGrad)" />
+    <!-- Upper Loop / Bowl -->
+    <path d="M 436 340 
+             L 530 340 
+             C 610 340, 610 480, 530 480 
+             L 436 480 Z
+             M 448 380 
+             L 524 380 
+             C 570 380, 570 440, 524 440 
+             L 448 440 Z" 
+          fill="url(#titaniumGrad)" />
 
-  <!-- 2. Upper Bowl / Loop -->
-  <path d="M 235 195 
-           L 282 195 
-           C 316 195, 316 265, 282 265 
-           L 235 265 Z
-           M 240 215 
-           L 278 215 
-           C 296 215, 296 245, 278 245 
-           L 240 245 Z" 
-        fill="url(#rGrad)" />
+    <!-- Emerald Reclaim Dynamic Kick Leg -->
+    <path d="M 500 464 
+             L 588 626 
+             C 592 634, 600 640, 610 640
+             C 624 640, 634 628, 628 614
+             L 540 452 Z" 
+          fill="url(#emeraldGrad)" />
 
-  <!-- 3. Confident Diagonal Leg in Radiant Emerald -->
-  <path d="M 268 258 
-           L 308 344 
-           C 310 348, 314 350, 318 350
-           C 326 350, 331 343, 328 336
-           L 286 250 Z" 
-        fill="url(#emeraldGrad)" />
-
-  <!-- Emerald Verification Node at the Leg Terminal -->
-  <circle cx="318" cy="344" r="5" fill="#34d399" />
+    <!-- Verification Jewel / Node -->
+    <circle cx="610" cy="626" r="14" fill="#34d399" />
+  </g>
 </svg>

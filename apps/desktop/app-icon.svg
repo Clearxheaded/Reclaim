@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background Squircle Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#161924" />
+      <stop offset="100%" stop-color="#0a0b10" />
+    </linearGradient>
+
+    <!-- Top Highlight Bevel -->
+    <linearGradient id="bevelGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14" />
+      <stop offset="10%" stop-color="#ffffff" stop-opacity="0.03" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- Titanium Stem & Bowl Gradient -->
+    <linearGradient id="titaniumGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e2e8f0" />
+    </linearGradient>
+
+    <!-- Emerald Reclaim Dynamic Leg Gradient -->
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+
+    <!-- Subtle Drop Shadow for Glyphs -->
+    <filter id="glyphShadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.6" />
+    </filter>
+
+    <!-- Subtle Document Shadow -->
+    <filter id="docShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <!-- 1. Native macOS App Squircle Foundation -->
+  <rect x="48" y="48" width="928" height="928" rx="212" fill="url(#bgGrad)" stroke="rgba(255,255,255,0.08)" stroke-width="2" />
+  
+  <!-- Subtle Top Highlight Rim -->
+  <rect x="49" y="49" width="926" height="460" rx="211" fill="url(#bevelGrad)" pointer-events="none" />
+
+  <!-- 2. Dual File Deduplication Motif (Ghost vs Keeper) -->
+  <!-- Ghost Duplicate File (Offset Back Layer with subtle dashed border) -->
+  <g transform="translate(260, 205) rotate(-6 230 300)" opacity="0.45">
+    <rect x="0" y="0" width="370" height="490" rx="36" fill="#131722" stroke="#38bdf8" stroke-width="4" stroke-dasharray="14 10" />
+  </g>
+
+  <!-- Primary Keeper Document (Foreground Master Layer) -->
+  <g transform="translate(325, 230)" filter="url(#docShadow)">
+    <rect x="0" y="0" width="380" height="500" rx="36" fill="#0d0e14" stroke="rgba(255,255,255,0.12)" stroke-width="3" />
+    
+    <!-- Top-Right Folded Dog-Ear Corner -->
+    <path d="M 310 0 L 380 70 L 310 70 Z" fill="#1e2230" />
+    <path d="M 310 0 L 310 70 L 380 70" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="3" />
+  </g>
+
+  <!-- 3. Monolithic Geometric 'R' Glyph -->
+  <g filter="url(#glyphShadow)">
+    <!-- Vertical Spine -->
+    <rect x="400" y="340" width="48" height="300" rx="14" fill="url(#titaniumGrad)" />
+
+    <!-- Upper Loop / Bowl -->
+    <path d="M 436 340 
+             L 530 340 
+             C 610 340, 610 480, 530 480 
+             L 436 480 Z
+             M 448 380 
+             L 524 380 
+             C 570 380, 570 440, 524 440 
+             L 448 440 Z" 
+          fill="url(#titaniumGrad)" />
+
+    <!-- Emerald Reclaim Dynamic Kick Leg -->
+    <path d="M 500 464 
+             L 588 626 
+             C 592 634, 600 640, 610 640
+             C 624 640, 634 628, 628 614
+             L 540 452 Z" 
+          fill="url(#emeraldGrad)" />
+
+    <!-- Verification Jewel / Node -->
+    <circle cx="610" cy="626" r="14" fill="#34d399" />
+  </g>
+</svg>
