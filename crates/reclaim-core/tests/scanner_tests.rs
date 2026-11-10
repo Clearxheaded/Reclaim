@@ -283,5 +283,8 @@ fn test_hard_link_identity_matches() {
     #[cfg(unix)]
     assert!(matches!(original_entry.file_id, Some(FileId::Unix { .. })));
     #[cfg(windows)]
-    assert!(matches!(original_entry.file_id, Some(FileId::Windows { .. })));
+    assert!(matches!(
+        original_entry.file_id,
+        Some(FileId::Windows { .. })
+    ));
 }

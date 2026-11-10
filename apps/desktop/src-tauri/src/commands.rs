@@ -466,9 +466,8 @@ pub async fn execute_quarantine_plan(
             halt_on_error: options.halt_on_error,
         };
 
-        let core_plan = if let Some(staged) =
-            staged_plan.filter(|s| dto_matches_staged_plan(&plan, s))
-        {
+        let matched_staged = staged_plan.filter(|s| dto_matches_staged_plan(&plan, s));
+        let core_plan = if let Some(staged) = matched_staged {
             staged
         } else {
             let keeper_policy = match plan.policy {
