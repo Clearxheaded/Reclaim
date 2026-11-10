@@ -9,7 +9,7 @@ import {
   Check,
   Lock,
 } from 'lucide-react';
-import { DuplicateGroupPayload } from '../types/reclaim';
+import { CandidateInvalidatedEvent, DuplicateGroupPayload } from '../types/reclaim';
 import { formatBytes, getBasename } from '../utils/format';
 import { executeCowDeduplication } from '../api/ipc';
 
@@ -18,6 +18,8 @@ interface CowDeduplicationModalProps {
   onClose: () => void;
   groups: DuplicateGroupPayload[];
   keeperOverrides: Map<string, string>;
+  invalidatedFiles?: Map<string, CandidateInvalidatedEvent>;
+  cowDeduplicatedPaths?: Set<string>;
   onComplete: (totalReclaimed: number, deduplicatedPaths: string[]) => void;
 }
 
@@ -33,6 +35,8 @@ export const CowDeduplicationModal: React.FC<CowDeduplicationModalProps> = ({
   onClose,
   groups,
   keeperOverrides,
+  invalidatedFiles,
+  cowDeduplicatedPaths,
   onComplete,
 }) => {
   const [status, setStatus] = useState<'idle' | 'running' | 'completed' | 'error'>('idle');
@@ -50,14 +54,22 @@ export const CowDeduplicationModal: React.FC<CowDeduplicationModalProps> = ({
   let totalBytes = 0;
 
   groups.forEach((group) => {
-    if (group.physical_copies.length < 2) return;
+    const validCopies = group.physical_copies.filter((copy) => {
+      const isInvalidated =
+        invalidatedFiles?.has(copy.primary_path) ||
+        copy.all_paths.some((p) => invalidatedFiles?.has(p));
+      const isAlreadyDeduped = cowDeduplicatedPaths?.has(copy.primary_path);
+      return !isInvalidated && !isAlreadyDeduped;
+    });
+    if (validCopies.length < 2) return;
+
     const keeperOverride = keeperOverrides.get(group.blake3_hash);
     const keeper =
       (keeperOverride &&
-        group.physical_copies.find((c) => c.primary_path === keeperOverride)) ||
-      group.physical_copies[0];
+        validCopies.find((c) => c.primary_path === keeperOverride)) ||
+      validCopies[0];
 
-    group.physical_copies.forEach((copy) => {
+    validCopies.forEach((copy) => {
       if (copy.primary_path !== keeper.primary_path) {
         pairs.push({
           keeperPath: keeper.primary_path,

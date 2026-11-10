@@ -108,6 +108,8 @@ export interface ActionPreconditionsPayload {
   expected_modified?: number;
   source_file_id?: string;
   keeper_file_id?: string;
+  source_modified?: string;
+  keeper_modified?: string;
 }
 
 export interface QuarantineActionPayload {
@@ -231,6 +233,12 @@ export interface CandidateInvalidatedEvent {
   group_hash: string;
   remaining_files_in_group: number;
   new_reclaimable_bytes: number;
+}
+
+export interface InvalidationToastItem {
+  id: string;
+  notice: CandidateInvalidatedEvent;
+  timestamp: number;
 }
 
 export type ActiveTab = 'scan' | 'plan' | 'monitor' | 'history' | 'invariants';

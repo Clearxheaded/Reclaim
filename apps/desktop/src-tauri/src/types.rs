@@ -97,6 +97,10 @@ pub struct ActionPreconditionsDto {
     pub expected_blake3_hash: String,
     pub source_file_id: Option<String>,
     pub keeper_file_id: Option<String>,
+    #[serde(default)]
+    pub source_modified: Option<String>,
+    #[serde(default)]
+    pub keeper_modified: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -317,8 +317,8 @@ fn deduplicate_apfs_internal(
     // 2. Inode identity check (if already hard links, extents are already shared)
     let src_meta = fs::symlink_metadata(source)?;
     let target_meta = fs::symlink_metadata(target)?;
-    let src_id = FileId::from_metadata(&src_meta);
-    let target_id = FileId::from_metadata(&target_meta);
+    let src_id = FileId::from_path_and_metadata(source, &src_meta);
+    let target_id = FileId::from_path_and_metadata(target, &target_meta);
 
     if src_id.is_some() && src_id == target_id {
         return Ok(CowDeduplicationResult {
@@ -509,8 +509,8 @@ fn deduplicate_linux_ficlone_internal(
     // 2. Inode identity check
     let src_meta = fs::symlink_metadata(source)?;
     let target_meta = fs::symlink_metadata(target)?;
-    let src_id = FileId::from_metadata(&src_meta);
-    let target_id = FileId::from_metadata(&target_meta);
+    let src_id = FileId::from_path_and_metadata(source, &src_meta);
+    let target_id = FileId::from_path_and_metadata(target, &target_meta);
 
     if src_id.is_some() && src_id == target_id {
         return Ok(CowDeduplicationResult {
@@ -622,8 +622,8 @@ impl ExtentDeduplicator for SyntheticCowDeduplicator {
 
         let src_meta = fs::symlink_metadata(source)?;
         let target_meta = fs::symlink_metadata(target)?;
-        let src_id = FileId::from_metadata(&src_meta);
-        let target_id = FileId::from_metadata(&target_meta);
+        let src_id = FileId::from_path_and_metadata(source, &src_meta);
+        let target_id = FileId::from_path_and_metadata(target, &target_meta);
 
         if src_id.is_some() && src_id == target_id {
             return Ok(CowDeduplicationResult {

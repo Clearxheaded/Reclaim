@@ -22,11 +22,11 @@ import {
   FileVideo,
   File,
 } from 'lucide-react';
-import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import {
   CandidateInvalidatedEvent,
   DuplicateGroupPayload,
   DuplicateSummaryPayload,
+  InvalidationToastItem,
   PhysicalCopyPayload,
 } from '../types/reclaim';
 import {
@@ -36,7 +36,7 @@ import {
   getFileExtension,
   truncateHash,
 } from '../utils/format';
-import { checkCowSupport, executeCowDeduplication, isTauri, revealInFileManager } from '../api/ipc';
+import { checkCowSupport, executeCowDeduplication, revealInFileManager } from '../api/ipc';
 import { StorageProportionBar } from './StorageProportionBar';
 import { QuickLookModal } from './QuickLookModal';
 import { CowDeduplicationModal } from './CowDeduplicationModal';
@@ -48,14 +48,12 @@ interface DuplicateInspectorProps {
   totalScannedFiles?: number;
   targetDir?: string | null;
   keeperOverrides: Map<string, string>; // group.blake3_hash -> keeper primary_path
+  invalidatedFiles: Map<string, CandidateInvalidatedEvent>;
+  cowDeduplicatedPaths: Set<string>;
+  invalidationToasts: InvalidationToastItem[];
+  onDismissToast: (toastId: string) => void;
   onSetKeeper: (groupHash: string, keeperPath: string) => void;
-  onSummaryUpdate?: (updatedSummary: DuplicateSummaryPayload) => void;
-}
-
-interface ToastItem {
-  id: string;
-  notice: CandidateInvalidatedEvent;
-  timestamp: number;
+  onCowDeduplicated: (dedupedPaths: string[], totalReclaimed: number) => void;
 }
 
 type SortOption = 'size_desc' | 'size_asc' | 'copies_desc' | 'name_asc';
@@ -78,36 +76,31 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
   totalScannedFiles,
   targetDir,
   keeperOverrides,
+  invalidatedFiles,
+  cowDeduplicatedPaths,
+  invalidationToasts,
+  onDismissToast,
   onSetKeeper,
-  onSummaryUpdate,
+  onCowDeduplicated,
 }) => {
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortBy, setSortBy] = useState<SortOption>('size_desc');
   const [filterScope, setFilterScope] = useState<FilterOption>('all');
 
-  // Dynamic Summary State
-  const [currentSummary, setCurrentSummary] = useState<DuplicateSummaryPayload | undefined>(summary);
-  useEffect(() => {
-    setCurrentSummary(summary);
-  }, [summary]);
-
-  // Real-Time TOCTOU Defense State
-  const [invalidatedFiles, setInvalidatedFiles] = useState<Map<string, CandidateInvalidatedEvent>>(
-    new Map()
-  );
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-
   // Copy-on-Write (CoW) Extent Deduplication State
   const [supportsCow, setSupportsCow] = useState<boolean>(false);
   const [cowModalOpen, setCowModalOpen] = useState<boolean>(false);
-  const [cowDeduplicatedPaths, setCowDeduplicatedPaths] = useState<Set<string>>(new Set());
   const [isSingleCowRunning, setIsSingleCowRunning] = useState<boolean>(false);
   const [singleCowResult, setSingleCowResult] = useState<{
     path: string;
     bytes: number;
     strategy: string;
   } | null>(null);
+
+  const isCopyInvalidated = (copy: PhysicalCopyPayload): boolean =>
+    invalidatedFiles.has(copy.primary_path) ||
+    copy.all_paths.some((p) => invalidatedFiles.has(p));
 
   // Check volume capability for CoW extent cloning (APFS or Btrfs)
   useEffect(() => {
@@ -119,56 +112,6 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
     }
   }, [targetDir, groups]);
 
-  // Active TOCTOU Defense: Handle continuous kernel filesystem invalidations
-  const handleCandidateInvalidated = (notice: CandidateInvalidatedEvent) => {
-    setInvalidatedFiles((prev) => {
-      const next = new Map(prev);
-      next.set(notice.path, notice);
-      return next;
-    });
-
-    const toastId = `${Date.now()}-${Math.random()}`;
-    setToasts((prev) => [
-      ...prev.slice(-2),
-      { id: toastId, notice, timestamp: Date.now() },
-    ]);
-
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== toastId));
-    }, 6000);
-
-    setCurrentSummary((prev) => {
-      if (!prev) return prev;
-      const isGroupDissolved = notice.remaining_files_in_group <= 1;
-      const updated: DuplicateSummaryPayload = {
-        ...prev,
-        reclaimable_bytes: notice.new_reclaimable_bytes,
-        duplicate_files_count: Math.max(0, prev.duplicate_files_count - 1),
-        duplicate_groups_count: isGroupDissolved
-          ? Math.max(0, prev.duplicate_groups_count - 1)
-          : prev.duplicate_groups_count,
-      };
-      onSummaryUpdate?.(updated);
-      return updated;
-    });
-  };
-
-  // Listen to Tauri "reclaim://candidate-invalidated" stream
-  useEffect(() => {
-    if (!isTauri()) return;
-    let unlisten: UnlistenFn | undefined;
-
-    listen<CandidateInvalidatedEvent>('reclaim://candidate-invalidated', (event) => {
-      handleCandidateInvalidated(event.payload);
-    }).then((unsub) => {
-      unlisten = unsub;
-    });
-
-    return () => {
-      if (unlisten) unlisten();
-    };
-  }, []);
-
   // Single candidate CoW extent deduplication
   const handleSingleCowDeduplicate = async (
     keeperPath: string,
@@ -179,23 +122,12 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
 
     try {
       const res = await executeCowDeduplication(keeperPath, candidatePath);
-      setCowDeduplicatedPaths((prev) => new Set(prev).add(candidatePath));
       setSingleCowResult({
         path: candidatePath,
         bytes: res.bytes_reclaimed,
         strategy: res.strategy,
       });
-
-      setCurrentSummary((prev) => {
-        if (!prev) return prev;
-        const updated = {
-          ...prev,
-          reclaimable_bytes: Math.max(0, prev.reclaimable_bytes - res.bytes_reclaimed),
-          hard_link_savings_bytes: prev.hard_link_savings_bytes + res.bytes_reclaimed,
-        };
-        onSummaryUpdate?.(updated);
-        return updated;
-      });
+      onCowDeduplicated([candidatePath], res.bytes_reclaimed);
     } catch (err: any) {
       alert(`CoW Deduplication error: ${err}`);
     } finally {
@@ -205,22 +137,7 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
 
   // Batch CoW deduplication completion
   const handleBatchCowComplete = (totalReclaimed: number, dedupedPaths: string[]) => {
-    setCowDeduplicatedPaths((prev) => {
-      const next = new Set(prev);
-      dedupedPaths.forEach((p) => next.add(p));
-      return next;
-    });
-
-    setCurrentSummary((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        reclaimable_bytes: Math.max(0, prev.reclaimable_bytes - totalReclaimed),
-        hard_link_savings_bytes: prev.hard_link_savings_bytes + totalReclaimed,
-      };
-      onSummaryUpdate?.(updated);
-      return updated;
-    });
+    onCowDeduplicated(dedupedPaths, totalReclaimed);
   };
 
   // Selection & Navigation
@@ -520,9 +437,9 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-canvas relative">
       {/* Real-Time Floating Invalidation Toast Notifications */}
-      {toasts.length > 0 && (
+      {invalidationToasts.length > 0 && (
         <div className="absolute top-3 right-3 z-50 space-y-2 pointer-events-auto max-w-sm animate-in fade-in duration-150">
-          {toasts.map((toast) => (
+          {invalidationToasts.map((toast) => (
             <div
               key={toast.id}
               className="p-2.5 rounded bg-surface border border-amber-500/30 shadow-2xl flex items-start gap-2.5 text-xs font-mono"
@@ -531,10 +448,10 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">
                   <span className="text-amber-300 font-semibold text-[11px]">
-                    Candidate Invalidated (Modified on disk)
+                    Candidate Invalidated ({toast.notice.reason})
                   </span>
                   <button
-                    onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                    onClick={() => onDismissToast(toast.id)}
                     className="text-zinc-500 hover:text-white"
                   >
                     <X className="w-3 h-3" />
@@ -553,9 +470,9 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
       )}
 
       {/* 1. Storage Breakdown Bar */}
-      {currentSummary && (
+      {summary && (
         <StorageProportionBar
-          summary={currentSummary}
+          summary={summary}
           totalScannedBytes={totalScannedBytes}
           totalScannedFiles={totalScannedFiles}
         />
@@ -670,7 +587,7 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
                 const parentDir = getParentDir(keeper.primary_path);
 
                 const groupInvalidCount = group.physical_copies.filter((c) =>
-                  invalidatedFiles.has(c.primary_path)
+                  isCopyInvalidated(c)
                 ).length;
                 const remainingValidCopies = group.physical_copies.length - groupInvalidCount;
                 const isGroupDissolved = remainingValidCopies <= 1 && groupInvalidCount > 0;
@@ -749,7 +666,7 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
                         {group.physical_copies.map((copy) => {
                           const isKeeper = copy.primary_path === keeper.primary_path;
                           const isRowActive = copy.primary_path === activeSelectedPath;
-                          const isInvalidated = invalidatedFiles.has(copy.primary_path);
+                          const isInvalidated = isCopyInvalidated(copy);
                           const isCowCloned = cowDeduplicatedPaths.has(copy.primary_path);
 
                           return (
@@ -970,7 +887,7 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
                     </span>
                   </div>
 
-                  {invalidatedFiles.has(selectedDuplicateCopy.primary_path) ? (
+                  {isCopyInvalidated(selectedDuplicateCopy) ? (
                     <div className="p-2 rounded bg-amber-500/10 border border-amber-500/25 space-y-1 text-xs">
                       <div className="font-semibold text-amber-300 text-[11px] flex items-center gap-1">
                         <AlertTriangle className="w-3.5 h-3.5" />
@@ -1008,7 +925,8 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
                             }
                             disabled={
                               isSingleCowRunning ||
-                              cowDeduplicatedPaths.has(selectedDuplicateCopy.primary_path)
+                              cowDeduplicatedPaths.has(selectedDuplicateCopy.primary_path) ||
+                              isCopyInvalidated(currentKeeper)
                             }
                             className="w-full py-1.5 px-2.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 disabled:bg-subtle disabled:text-zinc-600 text-emerald-300 text-xs font-medium border border-emerald-500/30 transition-colors flex items-center justify-center gap-1.5"
                           >
@@ -1093,6 +1011,8 @@ export const DuplicateInspector: React.FC<DuplicateInspectorProps> = ({
           onClose={() => setCowModalOpen(false)}
           groups={filteredGroups}
           keeperOverrides={keeperOverrides}
+          invalidatedFiles={invalidatedFiles}
+          cowDeduplicatedPaths={cowDeduplicatedPaths}
           onComplete={handleBatchCowComplete}
         />
       )}

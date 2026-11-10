@@ -266,7 +266,7 @@ pub fn scan_directory(
 
                 let size = meta.len();
                 let modified = meta.modified().ok();
-                let file_id = FileId::from_metadata(&meta);
+                let file_id = FileId::from_path_and_metadata(&entry_path, &meta);
                 let readonly = meta.permissions().readonly();
 
                 files_discovered += 1;

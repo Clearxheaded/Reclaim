@@ -1,23 +1,26 @@
 use crate::types::*;
 use reclaim_core::{
     find_duplicates, generate_plan, scan_directory, ActionPreconditions, CancellationToken,
-    CleanupPlan, DuplicateGroup, DuplicateOptions, DuplicateStage, FileEntry, KeeperPolicy,
+    CleanupPlan, DuplicateGroup, DuplicateOptions, DuplicateStage, FileEntry, FileId, KeeperPolicy,
     PhysicalCopy, PlanOptions, QuarantineAction, ScanOptions,
 };
-use reclaim_storage::datetime::format_rfc3339;
+use reclaim_storage::datetime::{format_rfc3339, parse_rfc3339};
 use reclaim_storage::{
     reconcile_startup_state, ActionExecutionStatus, ActionJournal, ActionRecoveryResolution,
     ExecutionOptions, ExecutionProgressEvent, SafeExecutor, SafeReverter, SessionId, SessionStatus,
     UndoConflictReason, UndoOptions, UndoProgressEvent,
 };
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
-use tauri::{Emitter, State, Window};
+use tauri::{AppHandle, Emitter, Manager, State, Window};
 
 pub struct AppState {
     pub cancel_token: Mutex<Arc<CancellationToken>>,
     pub active_watcher: Arc<Mutex<Option<reclaim_core::ActiveFsWatcher>>>,
+    pub scan_entries: Mutex<HashMap<PathBuf, FileEntry>>,
+    pub staged_plans: Mutex<HashMap<String, CleanupPlan>>,
 }
 
 impl Default for AppState {
@@ -25,8 +28,43 @@ impl Default for AppState {
         Self {
             cancel_token: Mutex::new(Arc::new(CancellationToken::new())),
             active_watcher: Arc::new(Mutex::new(None)),
+            scan_entries: Mutex::new(HashMap::new()),
+            staged_plans: Mutex::new(HashMap::new()),
         }
     }
+}
+
+// ----------------------------------------------------------------------------
+// Helpers: Unified journal resolution and staged plan integrity verification
+// ----------------------------------------------------------------------------
+fn resolve_journal_path(app: &AppHandle, explicit: Option<String>) -> Result<PathBuf, String> {
+    if let Some(p) = explicit {
+        let trimmed = p.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data directory: {}", e))?;
+    Ok(data_dir.join("journal.db"))
+}
+
+fn dto_matches_staged_plan(dto: &CleanupPlanDto, staged: &CleanupPlan) -> bool {
+    if PathBuf::from(&dto.root_dir) != staged.root_dir
+        || PathBuf::from(&dto.quarantine_dir) != staged.quarantine_dir
+        || dto.actions.len() != staged.actions.len()
+    {
+        return false;
+    }
+    dto.actions.iter().zip(staged.actions.iter()).all(|(a, s)| {
+        PathBuf::from(&a.source_path) == s.source_path
+            && PathBuf::from(&a.quarantine_path) == s.quarantine_path
+            && PathBuf::from(&a.keeper_path) == s.keeper_path
+            && a.preconditions.expected_size == s.preconditions.expected_size
+            && a.preconditions.expected_blake3_hash == s.preconditions.expected_hash
+    })
 }
 
 // ----------------------------------------------------------------------------
@@ -199,6 +237,19 @@ pub async fn scan_and_find_duplicates(
     .await
     .map_err(|e| format!("Task join error: {}", e))??;
 
+    // Cache scanned FileEntry metadata (modified timestamps & FileId) for planning and TOCTOU verification
+    if let Ok(mut entries_guard) = state.scan_entries.lock() {
+        entries_guard.clear();
+        for group in &raw_dup_output.groups {
+            for entry in &group.entries {
+                entries_guard.insert(entry.path.clone(), entry.clone());
+            }
+        }
+    }
+    if let Ok(mut plans_guard) = state.staged_plans.lock() {
+        plans_guard.clear();
+    }
+
     // Active TOCTOU Defense: Stream OS filesystem events on the scanned root directory
     let watcher_slot = state.active_watcher.clone();
     if let Ok(watcher) =
@@ -253,6 +304,7 @@ pub fn generate_cleanup_plan(
     quarantine_dir: Option<String>,
     policy: KeeperPolicyDto,
     duplicate_groups: Vec<DuplicateGroupDto>,
+    state: State<'_, AppState>,
 ) -> Result<CleanupPlanDto, String> {
     let root_path = PathBuf::from(&root_dir);
     let q_dir = quarantine_dir
@@ -274,7 +326,13 @@ pub fn generate_cleanup_plan(
         policy: keeper_policy,
     };
 
-    // Reconstruct core DuplicateGroups from DTOs
+    // Reconstruct core DuplicateGroups from DTOs while preserving scan metadata (modified + FileId)
+    let cached_entries = state
+        .scan_entries
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+
     let mut core_groups = Vec::new();
     for g in duplicate_groups {
         let hash = blake3::Hash::from_hex(&g.blake3_hash)
@@ -284,18 +342,41 @@ pub fn generate_cleanup_plan(
         let mut physical_copies = Vec::new();
 
         for pc in g.physical_copies {
+            let parsed_pc_fid = pc.file_id.as_deref().and_then(|s| s.parse::<FileId>().ok());
             let paths: Vec<PathBuf> = pc.all_paths.into_iter().map(PathBuf::from).collect();
+            let mut resolved_copy_fid = parsed_pc_fid;
+
             for p in &paths {
-                entries.push(FileEntry {
-                    path: p.clone(),
-                    size: g.size,
-                    modified: None,
-                    file_id: None,
-                    readonly: false,
-                });
+                let entry = if let Some(cached) = cached_entries.get(p) {
+                    cached.clone()
+                } else {
+                    let meta = std::fs::symlink_metadata(p).ok();
+                    let modified = meta.as_ref().and_then(|m| m.modified().ok());
+                    let file_id = meta
+                        .as_ref()
+                        .and_then(|m| FileId::from_path_and_metadata(p, m))
+                        .or(parsed_pc_fid);
+                    let readonly = meta
+                        .as_ref()
+                        .map(|m| m.permissions().readonly())
+                        .unwrap_or(false);
+                    FileEntry {
+                        path: p.clone(),
+                        size: g.size,
+                        modified,
+                        file_id,
+                        readonly,
+                    }
+                };
+
+                if resolved_copy_fid.is_none() {
+                    resolved_copy_fid = entry.file_id;
+                }
+                entries.push(entry);
             }
+
             physical_copies.push(PhysicalCopy {
-                file_id: None,
+                file_id: resolved_copy_fid,
                 paths,
             });
         }
@@ -312,6 +393,11 @@ pub fn generate_cleanup_plan(
 
     let plan = generate_plan(&core_groups, &plan_opts).map_err(|e| format!("Plan error: {}", e))?;
 
+    let plan_id = uuid::Uuid::new_v4().to_string();
+    if let Ok(mut staged_guard) = state.staged_plans.lock() {
+        staged_guard.insert(plan_id.clone(), plan.clone());
+    }
+
     let actions = plan
         .actions
         .into_iter()
@@ -325,6 +411,8 @@ pub fn generate_cleanup_plan(
                 expected_blake3_hash: a.preconditions.expected_hash,
                 source_file_id: a.preconditions.source_file_id.map(|id| id.to_string()),
                 keeper_file_id: a.preconditions.keeper_file_id.map(|id| id.to_string()),
+                source_modified: a.preconditions.source_modified.map(format_rfc3339),
+                keeper_modified: a.preconditions.keeper_modified.map(format_rfc3339),
             },
         })
         .collect();
@@ -332,7 +420,7 @@ pub fn generate_cleanup_plan(
     let created_at_str = format_rfc3339(plan.created_at);
 
     Ok(CleanupPlanDto {
-        plan_id: uuid::Uuid::new_v4().to_string(),
+        plan_id,
         root_dir: plan.root_dir.to_string_lossy().to_string(),
         quarantine_dir: plan.quarantine_dir.to_string_lossy().to_string(),
         created_at: created_at_str,
@@ -351,17 +439,20 @@ pub fn generate_cleanup_plan(
 // ----------------------------------------------------------------------------
 #[tauri::command]
 pub async fn execute_quarantine_plan(
+    app: AppHandle,
     window: Window,
+    state: State<'_, AppState>,
     plan: CleanupPlanDto,
     options: ExecutionOptionsDto,
 ) -> Result<ExecutionReportDto, String> {
-    tokio::task::spawn_blocking(move || {
-        let root_path = PathBuf::from(&plan.root_dir);
-        let journal_path = options
-            .journal_path
-            .map(PathBuf::from)
-            .unwrap_or_else(|| root_path.join(".reclaim").join("journal.db"));
+    let journal_path = resolve_journal_path(&app, options.journal_path.clone())?;
+    let staged_plan = state
+        .staged_plans
+        .lock()
+        .ok()
+        .and_then(|guard| guard.get(&plan.plan_id).cloned());
 
+    tokio::task::spawn_blocking(move || {
         // Ensure journal directory exists
         if let Some(parent) = journal_path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -375,51 +466,72 @@ pub async fn execute_quarantine_plan(
             halt_on_error: options.halt_on_error,
         };
 
-        let keeper_policy = match plan.policy {
-            KeeperPolicyDto::ShortestPath => KeeperPolicy::ShortestPath,
-            KeeperPolicyDto::OldestModified => KeeperPolicy::OldestModified,
-            KeeperPolicyDto::NewestModified => KeeperPolicy::NewestModified,
-            KeeperPolicyDto::PreferredDirectory { directory } => {
-                KeeperPolicy::PreferredDirectory(PathBuf::from(directory))
-            }
-        };
+        let core_plan = if let Some(staged) =
+            staged_plan.filter(|s| dto_matches_staged_plan(&plan, s))
+        {
+            staged
+        } else {
+            let keeper_policy = match plan.policy {
+                KeeperPolicyDto::ShortestPath => KeeperPolicy::ShortestPath,
+                KeeperPolicyDto::OldestModified => KeeperPolicy::OldestModified,
+                KeeperPolicyDto::NewestModified => KeeperPolicy::NewestModified,
+                KeeperPolicyDto::PreferredDirectory { directory } => {
+                    KeeperPolicy::PreferredDirectory(PathBuf::from(directory))
+                }
+            };
 
-        // Convert DTO back to core CleanupPlan
-        let core_actions: Vec<QuarantineAction> = plan
-            .actions
-            .into_iter()
-            .map(|a| QuarantineAction {
-                source_path: PathBuf::from(a.source_path),
-                quarantine_path: PathBuf::from(a.quarantine_path),
-                keeper_path: PathBuf::from(a.keeper_path),
-                rationale: a.rationale,
-                preconditions: ActionPreconditions {
-                    expected_size: a.preconditions.expected_size,
-                    expected_hash: a.preconditions.expected_blake3_hash,
-                    source_modified: None,
-                    source_file_id: None,
-                    keeper_modified: None,
-                    keeper_file_id: None,
+            let core_actions: Vec<QuarantineAction> = plan
+                .actions
+                .into_iter()
+                .map(|a| QuarantineAction {
+                    source_path: PathBuf::from(a.source_path),
+                    quarantine_path: PathBuf::from(a.quarantine_path),
+                    keeper_path: PathBuf::from(a.keeper_path),
+                    rationale: a.rationale,
+                    preconditions: ActionPreconditions {
+                        expected_size: a.preconditions.expected_size,
+                        expected_hash: a.preconditions.expected_blake3_hash,
+                        source_modified: a
+                            .preconditions
+                            .source_modified
+                            .as_deref()
+                            .and_then(|s| parse_rfc3339(s).ok()),
+                        source_file_id: a
+                            .preconditions
+                            .source_file_id
+                            .as_deref()
+                            .and_then(|s| s.parse::<FileId>().ok()),
+                        keeper_modified: a
+                            .preconditions
+                            .keeper_modified
+                            .as_deref()
+                            .and_then(|s| parse_rfc3339(s).ok()),
+                        keeper_file_id: a
+                            .preconditions
+                            .keeper_file_id
+                            .as_deref()
+                            .and_then(|s| s.parse::<FileId>().ok()),
+                    },
+                })
+                .collect();
+
+            CleanupPlan {
+                created_at: SystemTime::now(),
+                root_dir: PathBuf::from(plan.root_dir),
+                quarantine_dir: PathBuf::from(plan.quarantine_dir),
+                policy: keeper_policy,
+                actions: core_actions,
+                keepers: Vec::new(),
+                summary: reclaim_core::PlanSummary {
+                    total_duplicate_files: plan.summary.total_actions
+                        + plan.summary.protected_keepers_count,
+                    duplicate_groups_count: plan.summary.protected_keepers_count,
+                    planned_actions: plan.summary.total_actions,
+                    protected_keepers: plan.summary.protected_keepers_count,
+                    total_reclaimable_bytes: plan.summary.total_bytes_to_quarantine,
+                    files_left_untouched: plan.summary.protected_keepers_count,
                 },
-            })
-            .collect();
-
-        let core_plan = CleanupPlan {
-            created_at: SystemTime::now(),
-            root_dir: PathBuf::from(plan.root_dir),
-            quarantine_dir: PathBuf::from(plan.quarantine_dir),
-            policy: keeper_policy,
-            actions: core_actions,
-            keepers: Vec::new(),
-            summary: reclaim_core::PlanSummary {
-                total_duplicate_files: plan.summary.total_actions
-                    + plan.summary.protected_keepers_count,
-                duplicate_groups_count: plan.summary.protected_keepers_count,
-                planned_actions: plan.summary.total_actions,
-                protected_keepers: plan.summary.protected_keepers_count,
-                total_reclaimable_bytes: plan.summary.total_bytes_to_quarantine,
-                files_left_untouched: plan.summary.protected_keepers_count,
-            },
+            }
         };
 
         let win_cb = window.clone();
@@ -560,16 +672,14 @@ pub async fn execute_quarantine_plan(
 // ----------------------------------------------------------------------------
 #[tauri::command]
 pub async fn undo_session(
+    app: AppHandle,
     window: Window,
     session_id: Option<String>,
     options: UndoOptionsDto,
 ) -> Result<UndoReportDto, String> {
-    tokio::task::spawn_blocking(move || {
-        let journal_path = options
-            .journal_path
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(".reclaim/journal.db"));
+    let journal_path = resolve_journal_path(&app, options.journal_path.clone())?;
 
+    tokio::task::spawn_blocking(move || {
         let mut journal =
             ActionJournal::open(&journal_path).map_err(|e| format!("Journal open error: {}", e))?;
 
@@ -732,10 +842,11 @@ pub async fn undo_session(
 // Command 6: Fetch session history from journal
 // ----------------------------------------------------------------------------
 #[tauri::command]
-pub fn get_session_history(journal_path: Option<String>) -> Result<Vec<SessionHistoryDto>, String> {
-    let j_path = journal_path
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".reclaim/journal.db"));
+pub fn get_session_history(
+    app: AppHandle,
+    journal_path: Option<String>,
+) -> Result<Vec<SessionHistoryDto>, String> {
+    let j_path = resolve_journal_path(&app, journal_path)?;
 
     if !j_path.exists() {
         return Ok(Vec::new());
@@ -796,10 +907,11 @@ pub fn get_session_history(journal_path: Option<String>) -> Result<Vec<SessionHi
 // Command 7: Reconcile startup state / crash recovery
 // ----------------------------------------------------------------------------
 #[tauri::command]
-pub fn recover_journal(journal_path: Option<String>) -> Result<RecoveryReportDto, String> {
-    let j_path = journal_path
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".reclaim/journal.db"));
+pub fn recover_journal(
+    app: AppHandle,
+    journal_path: Option<String>,
+) -> Result<RecoveryReportDto, String> {
+    let j_path = resolve_journal_path(&app, journal_path)?;
 
     if !j_path.exists() {
         return Ok(RecoveryReportDto {

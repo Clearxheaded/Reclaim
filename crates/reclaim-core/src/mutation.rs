@@ -609,7 +609,8 @@ pub fn validate_action_preconditions(action: &QuarantineAction) -> Result<(), Pr
     }
 
     if let Some(expected_fid) = action.preconditions.keeper_file_id {
-        if let Some(actual_fid) = FileId::from_metadata(&keeper_meta) {
+        let actual_fid = FileId::from_path_and_metadata(&action.keeper_path, &keeper_meta);
+        if let Some(actual_fid) = actual_fid {
             if actual_fid != expected_fid {
                 return Err(PreconditionError::KeeperFileIdMismatch {
                     path: action.keeper_path.clone(),
@@ -672,7 +673,7 @@ pub fn validate_action_preconditions(action: &QuarantineAction) -> Result<(), Pr
     }
 
     if let Some(expected_fid) = action.preconditions.source_file_id {
-        if let Some(actual_fid) = FileId::from_metadata(&src_meta) {
+        if let Some(actual_fid) = FileId::from_path_and_metadata(&action.source_path, &src_meta) {
             if actual_fid != expected_fid {
                 return Err(PreconditionError::SourceFileIdMismatch {
                     path: action.source_path.clone(),

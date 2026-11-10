@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { Sidebar } from './components/Sidebar';
 import { DirectoryPicker } from './components/DirectoryPicker';
 import { ScanProgressView } from './components/ScanProgressView';
@@ -10,12 +11,15 @@ import { HistoryRecoveryCenter } from './components/HistoryRecoveryCenter';
 import { SafetyInvariantsModal } from './components/SafetyInvariantsModal';
 import {
   ActiveTab,
+  CandidateInvalidatedEvent,
   CleanupPlanPayload,
+  DuplicateGroupPayload,
   DuplicateOutputPayload,
   DuplicateProgressEvent,
   ExecutionOptionsPayload,
   ExecutionProgressEventPayload,
   ExecutionReportPayload,
+  InvalidationToastItem,
   KeeperPolicy,
   ScanProgressEvent,
   SessionHistoryItem,
@@ -25,6 +29,7 @@ import {
   executeQuarantinePlan,
   generateCleanupPlan,
   getSessionHistory,
+  isTauri,
   pickDirectory,
   scanAndFindDuplicates,
 } from './api/ipc';
@@ -39,9 +44,14 @@ export const App: React.FC = () => {
   const [duplicateProgress, setDuplicateProgress] = useState<DuplicateProgressEvent | null>(null);
   const [duplicateOutput, setDuplicateOutput] = useState<DuplicateOutputPayload | null>(null);
 
-  // Duplicate Inspector & Keeper Overrides
+  // Duplicate Inspector, Keeper Overrides, & Real-Time Invalidation / CoW State
   const [keeperOverrides, setKeeperOverrides] = useState<Map<string, string>>(new Map());
   const [keeperPolicy, setKeeperPolicy] = useState<KeeperPolicy>({ type: 'ShortestPath' });
+  const [invalidatedFiles, setInvalidatedFiles] = useState<Map<string, CandidateInvalidatedEvent>>(
+    new Map()
+  );
+  const [invalidationToasts, setInvalidationToasts] = useState<InvalidationToastItem[]>([]);
+  const [cowDeduplicatedPaths, setCowDeduplicatedPaths] = useState<Set<string>>(new Set());
 
   // Plan & Execution State
   const [currentPlan, setCurrentPlan] = useState<CleanupPlanPayload | null>(null);
@@ -59,6 +69,62 @@ export const App: React.FC = () => {
     refreshHistory();
   }, []);
 
+  // Active TOCTOU Defense: listen for kernel filesystem invalidations across all tabs
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: UnlistenFn | undefined;
+    let active = true;
+
+    listen<CandidateInvalidatedEvent>('reclaim://candidate-invalidated', (event) => {
+      if (!active) return;
+      const notice = event.payload;
+
+      setInvalidatedFiles((prev) => {
+        const next = new Map(prev);
+        next.set(notice.path, notice);
+        return next;
+      });
+
+      const toastId = `${Date.now()}-${Math.random()}`;
+      setInvalidationToasts((prev) => [
+        ...prev.slice(-2),
+        { id: toastId, notice, timestamp: Date.now() },
+      ]);
+      setTimeout(() => {
+        setInvalidationToasts((prev) => prev.filter((t) => t.id !== toastId));
+      }, 6000);
+
+      setDuplicateOutput((prev) => {
+        if (!prev) return prev;
+        const isGroupDissolved = notice.remaining_files_in_group <= 1;
+        return {
+          ...prev,
+          summary: {
+            ...prev.summary,
+            reclaimable_bytes: notice.new_reclaimable_bytes,
+            duplicate_files_count: Math.max(0, prev.summary.duplicate_files_count - 1),
+            duplicate_groups_count: isGroupDissolved
+              ? Math.max(0, prev.summary.duplicate_groups_count - 1)
+              : prev.summary.duplicate_groups_count,
+          },
+        };
+      });
+
+      setCurrentPlan(null);
+    }).then((unsub) => {
+      if (active) {
+        unlisten = unsub;
+      } else {
+        unsub();
+      }
+    });
+
+    return () => {
+      active = false;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   const refreshHistory = async () => {
     try {
       const history = await getSessionHistory();
@@ -68,15 +134,21 @@ export const App: React.FC = () => {
     }
   };
 
+  const resetScanDerivedState = () => {
+    setDuplicateOutput(null);
+    setCurrentPlan(null);
+    setExecReport(null);
+    setKeeperOverrides(new Map());
+    setInvalidatedFiles(new Map());
+    setInvalidationToasts([]);
+    setCowDeduplicatedPaths(new Set());
+  };
+
   const handleSelectDirectory = async () => {
     const selected = await pickDirectory();
     if (selected) {
       setTargetDir(selected);
-      // Reset previous results if switching directory
-      setDuplicateOutput(null);
-      setCurrentPlan(null);
-      setExecReport(null);
-      setKeeperOverrides(new Map());
+      resetScanDerivedState();
     }
   };
 
@@ -86,10 +158,8 @@ export const App: React.FC = () => {
     setIsScanning(true);
     setScanProgress(null);
     setDuplicateProgress(null);
-    setDuplicateOutput(null);
-    setCurrentPlan(null);
+    resetScanDerivedState();
     setKeeperPolicy(policy);
-    setKeeperOverrides(new Map());
 
     try {
       const result = await scanAndFindDuplicates(
@@ -119,27 +189,78 @@ export const App: React.FC = () => {
     setCurrentPlan(null);
   };
 
+  const handleCowDeduplicated = (dedupedPaths: string[], totalReclaimed: number) => {
+    setCowDeduplicatedPaths((prev) => {
+      const next = new Set(prev);
+      dedupedPaths.forEach((p) => next.add(p));
+      return next;
+    });
+    setDuplicateOutput((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        summary: {
+          ...prev.summary,
+          reclaimable_bytes: Math.max(0, prev.summary.reclaimable_bytes - totalReclaimed),
+          hard_link_savings_bytes: prev.summary.hard_link_savings_bytes + totalReclaimed,
+        },
+      };
+    });
+    setCurrentPlan(null);
+  };
+
+  // Filter out watcher-invalidated and CoW-deduplicated candidates before planning & action counts
+  const eligibleGroupsForPlanning = useMemo<DuplicateGroupPayload[]>(() => {
+    if (!duplicateOutput) return [];
+
+    const nextGroups: DuplicateGroupPayload[] = [];
+    for (const group of duplicateOutput.groups) {
+      const eligibleCopies = group.physical_copies.filter((copy) => {
+        const isInvalidated =
+          invalidatedFiles.has(copy.primary_path) ||
+          copy.all_paths.some((p) => invalidatedFiles.has(p));
+        const isCowDeduped = cowDeduplicatedPaths.has(copy.primary_path);
+        return !isInvalidated && !isCowDeduped;
+      });
+
+      if (eligibleCopies.length < 2) {
+        continue;
+      }
+
+      const copies = [...eligibleCopies];
+      const override = keeperOverrides.get(group.blake3_hash);
+      if (override) {
+        const foundIdx = copies.findIndex((c) => c.primary_path === override);
+        if (foundIdx > 0) {
+          const [selected] = copies.splice(foundIdx, 1);
+          copies.unshift(selected);
+        }
+      }
+
+      const totalPathCount = copies.reduce((sum, c) => sum + c.all_paths.length, 0);
+      nextGroups.push({
+        ...group,
+        physical_copies: copies,
+        total_physical_copies: copies.length,
+        total_path_count: totalPathCount,
+        reclaimable_bytes: Math.max(0, copies.length - 1) * group.size,
+      });
+    }
+
+    return nextGroups;
+  }, [duplicateOutput, invalidatedFiles, cowDeduplicatedPaths, keeperOverrides]);
+
   const handleGeneratePlan = async () => {
-    if (!targetDir || !duplicateOutput) return;
+    if (!targetDir || !duplicateOutput || eligibleGroupsForPlanning.length === 0) return;
 
     setIsGeneratingPlan(true);
     try {
-      // Clone groups with custom keeper overrides if any
-      const groups = duplicateOutput.groups.map((group) => {
-        const override = keeperOverrides.get(group.blake3_hash);
-        if (override) {
-          const foundIdx = group.physical_copies.findIndex((c) => c.primary_path === override);
-          if (foundIdx > 0) {
-            const copies = [...group.physical_copies];
-            const [selected] = copies.splice(foundIdx, 1);
-            copies.unshift(selected);
-            return { ...group, physical_copies: copies };
-          }
-        }
-        return group;
-      });
-
-      const plan = await generateCleanupPlan(targetDir, undefined, keeperPolicy, groups);
+      const plan = await generateCleanupPlan(
+        targetDir,
+        undefined,
+        keeperPolicy,
+        eligibleGroupsForPlanning
+      );
       setCurrentPlan(plan);
       setShowPlanModal(true);
     } catch (err) {
@@ -171,10 +292,15 @@ export const App: React.FC = () => {
     }
   };
 
-  // Compute total actions count
-  const totalProposedActions = duplicateOutput
-    ? duplicateOutput.groups.reduce((acc, g) => acc + Math.max(0, g.physical_copies.length - 1), 0)
-    : 0;
+  // Compute total actions and reclaimable bytes strictly from eligible candidates
+  const totalProposedActions = eligibleGroupsForPlanning.reduce(
+    (acc, g) => acc + Math.max(0, g.physical_copies.length - 1),
+    0
+  );
+  const eligibleReclaimableBytes = eligibleGroupsForPlanning.reduce(
+    (acc, g) => acc + g.reclaimable_bytes,
+    0
+  );
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-canvas text-gray-100 font-sans">
@@ -215,14 +341,18 @@ export const App: React.FC = () => {
                   totalScannedFiles={scanProgress?.files_scanned}
                   targetDir={targetDir}
                   keeperOverrides={keeperOverrides}
+                  invalidatedFiles={invalidatedFiles}
+                  cowDeduplicatedPaths={cowDeduplicatedPaths}
+                  invalidationToasts={invalidationToasts}
+                  onDismissToast={(toastId) =>
+                    setInvalidationToasts((prev) => prev.filter((t) => t.id !== toastId))
+                  }
                   onSetKeeper={handleSetKeeper}
-                  onSummaryUpdate={(upd) => {
-                    setDuplicateOutput((prev) => (prev ? { ...prev, summary: upd } : null));
-                  }}
+                  onCowDeduplicated={handleCowDeduplicated}
                 />
                 <SafetyActionBar
                   totalActions={totalProposedActions}
-                  reclaimableBytes={duplicateOutput.summary.reclaimable_bytes}
+                  reclaimableBytes={eligibleReclaimableBytes}
                   hardLinkSavings={duplicateOutput.summary.hard_link_savings_bytes}
                   policy={keeperPolicy}
                   onPolicyChange={setKeeperPolicy}
@@ -259,9 +389,7 @@ export const App: React.FC = () => {
             report={execReport}
             onOpenHistory={() => setActiveTab('history')}
             onNewScan={() => {
-              setDuplicateOutput(null);
-              setCurrentPlan(null);
-              setExecReport(null);
+              resetScanDerivedState();
               setActiveTab('scan');
             }}
           />
@@ -289,4 +417,3 @@ export const App: React.FC = () => {
     </div>
   );
 };
-
