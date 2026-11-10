@@ -52,16 +52,16 @@ fn resolve_journal_path(app: &AppHandle, explicit: Option<String>) -> Result<Pat
 }
 
 fn dto_matches_staged_plan(dto: &CleanupPlanDto, staged: &CleanupPlan) -> bool {
-    if PathBuf::from(&dto.root_dir) != staged.root_dir
-        || PathBuf::from(&dto.quarantine_dir) != staged.quarantine_dir
+    if Path::new(&dto.root_dir) != staged.root_dir.as_path()
+        || Path::new(&dto.quarantine_dir) != staged.quarantine_dir.as_path()
         || dto.actions.len() != staged.actions.len()
     {
         return false;
     }
     dto.actions.iter().zip(staged.actions.iter()).all(|(a, s)| {
-        PathBuf::from(&a.source_path) == s.source_path
-            && PathBuf::from(&a.quarantine_path) == s.quarantine_path
-            && PathBuf::from(&a.keeper_path) == s.keeper_path
+        Path::new(&a.source_path) == s.source_path.as_path()
+            && Path::new(&a.quarantine_path) == s.quarantine_path.as_path()
+            && Path::new(&a.keeper_path) == s.keeper_path.as_path()
             && a.preconditions.expected_size == s.preconditions.expected_size
             && a.preconditions.expected_blake3_hash == s.preconditions.expected_hash
     })
