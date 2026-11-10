@@ -149,7 +149,7 @@ fn test_validate_preconditions_modified_source_hash() {
     let action = QuarantineAction {
         source_path: source_path.clone(),
         quarantine_path,
-        keeper_path,
+        keeper_path: keeper_path.clone(),
         preconditions: ActionPreconditions {
             expected_size: content.len() as u64,
             expected_hash: hash,
@@ -236,7 +236,7 @@ fn test_validate_preconditions_missing_source() {
     let action = QuarantineAction {
         source_path: source_path.clone(),
         quarantine_path,
-        keeper_path,
+        keeper_path: keeper_path.clone(),
         preconditions: ActionPreconditions {
             expected_size: content.len() as u64,
             expected_hash: hash,
@@ -277,9 +277,9 @@ fn test_validate_preconditions_destination_already_exists() {
     let source_meta = fs::symlink_metadata(&source_path).unwrap();
 
     let action = QuarantineAction {
-        source_path,
+        source_path: source_path.clone(),
         quarantine_path: quarantine_path.clone(),
-        keeper_path,
+        keeper_path: keeper_path.clone(),
         preconditions: ActionPreconditions {
             expected_size: content.len() as u64,
             expected_hash: hash,
@@ -329,7 +329,7 @@ fn test_validate_preconditions_symlink_defense() {
     let action = QuarantineAction {
         source_path: source_path.clone(),
         quarantine_path,
-        keeper_path,
+        keeper_path: keeper_path.clone(),
         preconditions: ActionPreconditions {
             expected_size: content.len() as u64,
             expected_hash: hash,
